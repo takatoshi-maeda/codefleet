@@ -7,6 +7,7 @@
 - `.buildfleet/data/backlog/items.json`
 - `.buildfleet/roles.json`
 - `.buildfleet/runtime/agents.json`
+- `.buildfleet/runtime/app-server-sessions.json`
 
 ## 2. acceptance-testing/spec.json
 
@@ -118,6 +119,14 @@
 - 読み込み時に schema validation。
 - 書き込み前（入力）と書き込み後（永続化結果）で schema validation。
 - CI で `docs/schemas/*.schema.json` とサンプル JSON の整合性を検証。
+- App Server の型/スキーマは手書きせず、以下で生成した成果物を利用する。
+
+```bash
+codex app-server generate-ts --out ./schemas
+codex app-server generate-json-schema --out ./schemas
+```
+
+- App Server バージョン更新時は上記コマンドを再実行し、差分をレビューして反映する。
 
 ## 9. 互換性・移行
 
@@ -144,3 +153,22 @@
 - `fleetctl up` はデフォルトでフォアグラウンド起動、`-d` 指定時はバックグラウンド起動。
 - `fleetctl down --all` 成功時は `stopped`。
 - プロセス異常終了時は `failed` と `lastError` を更新。
+
+## 11. app-server session state
+
+### 11.1 JSON Schema
+
+- `docs/schemas/app-server-session.schema.json` を参照。
+
+### 11.2 session status
+
+- `disconnected`: App Server 未接続。
+- `initializing`: `initialize` 実行中。
+- `ready`: `initialized` 完了済み。
+- `error`: 接続/プロトコルエラー。
+
+更新ルール:
+
+- `fleetctl up` で透過起動した App Server 直後は `initializing`。
+- `initialized` 受信後は `ready`。
+- 接続断または不正レスポンス受信時は `error`。

@@ -70,6 +70,7 @@ PM / Developer / QA の複数ロールが、CodexCLI 上で同一リポジトリ
   roles.json
   runtime/
     agents.json
+    app-server-sessions.json
   logs/
     agents/
       <agent-id>.log
@@ -86,7 +87,11 @@ PM / Developer / QA の複数ロールが、CodexCLI 上で同一リポジトリ
 - スキーマ仕様は `docs/buildfleet-data-schemas.md` の fleet runtime state を参照。
 - 起動中エージェントの状態（`starting|running|stopped|failed`）と PID を保持。
 
-### 4.3 `.buildfleet/data/backlog/change-logs/*.md`（例）
+### 4.3 `.buildfleet/runtime/app-server-sessions.json` の仕様
+
+- スキーマ仕様は `docs/buildfleet-data-schemas.md` の app-server session state を参照。
+- エージェントごとの App Server 接続状態、`threadId`、`activeTurnId` を保持。
+### 4.4 `.buildfleet/data/backlog/change-logs/*.md`（例）
 
 - Front matter に最小メタ情報を保持し、監査・時刻ガードに利用。
 
@@ -180,8 +185,12 @@ buildfleet fleetctl logs --role Developer --tail 200
 - `fleetctl up` はデフォルトでフォアグラウンド起動し、`-d` 指定時のみバックグラウンド起動する。
 - `fleetctl up/down/restart --role <Role>` でロール単位の群制御を行える。
 - 起動時は `.buildfleet/runtime/agents.json` を `starting` で作成/更新し、heartbeat 受信で `running` に遷移。
+- `fleetctl up` 実行時に各エージェント用の `codex app-server` を透過的に起動する。
+- App Server 起動直後に `initialize` を送信し、`initialized` 受信後に対話処理へ進む。
 - `fleetctl down --all` は全 PID に SIGTERM を送信し、停止確認後 `stopped` へ遷移。
+- `fleetctl down` 実行時は対応する App Server プロセスも透過的に停止する。
 - `fleetctl restart --all` は `down -> up` を同一コマンドで実施。
+- `fleetctl restart` は App Server を含めて `down -> up` を一括で実施する。
 - `fleetctl logs` は `.buildfleet/logs/agents/<agent-id>.log` を role フィルタ付きで集約表示する。
 
 ---
@@ -288,6 +297,10 @@ src/
     relations/
       relation-service.ts
   infra/
+    appserver/
+      app-server-client.ts
+      jsonl-rpc-transport.ts
+      turn-event-subscriber.ts
     fs/
       json-repository.ts
       markdown-repository.ts
@@ -337,13 +350,22 @@ src/
 1. Phase 1: Acceptance/Backlog の CRUD CLI を先行実装。
 2. Phase 2: `stable-snapshot-guard` と change-log front matter 導入。
 3. Phase 3: Epic 非可視依存と `--include-hidden`。
-4. Phase 4: event watcher（git 更新 / result 作成 / polling）を常駐プロセス化。
-5. Phase 5: 運用メトリクス（エラー率、再試行回数、イベント遅延）を可視化。
+4. Phase 4: fleetctl 群制御 + App Server session 管理を実装。
+5. Phase 5: event watcher（git 更新 / result 作成 / polling）を常駐プロセス化。
+6. Phase 6: 運用メトリクス（エラー率、再試行回数、イベント遅延）を可視化。
 
 ---
 
 ## 14. 追加提案（実運用向け）
 
 - `schemas/*.json` を置いて AJV で JSON 検証。
+- App Server 連携の型/スキーマは手動定義でなく、以下の生成コマンドで取得した成果物を利用する。
+
+```bash
+codex app-server generate-ts --out ./schemas
+codex app-server generate-json-schema --out ./schemas
+```
+
+- App Server バージョン更新時は再生成して差分をレビューする。
 - `buildfleet doctor` で整合性診断（孤立 item、未参照 acceptance test 等）。
 - `.buildfleet/data/backlog/change-logs` に actor 署名（Git user/email）を強制し、監査性を強化。
