@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "buildfleet/runtime/agents.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "updatedAt", "agents"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "role",
+          "status",
+          "pid",
+          "cwd",
+          "startedAt",
+          "lastHeartbeatAt"
+        ],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": ["PM", "Developer", "QA"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["starting", "running", "stopped", "failed"]
+          },
+          "pid": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "cwd": { "type": "string", "minLength": 1 },
+          "startedAt": { "type": "string", "format": "date-time" },
+          "lastHeartbeatAt": { "type": "string", "format": "date-time" },
+          "lastError": { "type": "string" }
+        }
+      }
+    }
+  }
+}

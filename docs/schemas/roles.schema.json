@@ -19,7 +19,7 @@
           },
           "role": {
             "type": "string",
-            "enum": ["PM", "LeadDeveloper", "Developer", "QA"]
+            "enum": ["PM", "Developer", "QA"]
           }
         }
       }

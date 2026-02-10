@@ -6,6 +6,7 @@
 - `.buildfleet/data/acceptance-testing/results/<result-id>.json`
 - `.buildfleet/data/backlog/items.json`
 - `.buildfleet/roles.json`
+- `.buildfleet/runtime/agents.json`
 
 ## 2. acceptance-testing/spec.json
 
@@ -95,9 +96,10 @@
 - `.buildfleet/roles.json` の schema は `docs/schemas/roles.schema.json` を参照。
 - ロール定義は `.buildfleet/roles.json`。
 - `roles.json` はユーザーではなく AI エージェントにロールを付与する。
-- `roles.json` の `agents[].id` にはエージェント識別子を設定する（例: `pm-agent`, `leaddev-agent`, `dev-agent-1`, `qa-agent`）。
+- `roles.json` の `agents[].id` にはエージェント識別子を設定する（例: `pm-agent`, `dev-agent-1`, `qa-agent`）。
 - 未登録エージェントは `Developer` として扱う。
-- `--include-hidden`、`epic/item delete --force` は `PM` または `LeadDeveloper` のみ許可。
+- `fleetctl --role <Role>` は `roles.json` に基づくロール単位の対象抽出に使用する。
+- `--include-hidden`、`epic/item delete --force` は `PM` のみ許可。
 
 サンプル:
 
@@ -105,7 +107,6 @@
 {
   "agents": [
     { "id": "pm-agent", "role": "PM" },
-    { "id": "leaddev-agent", "role": "LeadDeveloper" },
     { "id": "dev-agent-1", "role": "Developer" },
     { "id": "qa-agent", "role": "QA" }
   ]
@@ -123,3 +124,23 @@
 - `version` メジャー更新時は migration script 必須。
 - 旧フォーマット読み込みは 1 バージョン前まで後方互換。
 - 移行失敗時はファイルを更新せずエラー終了。
+
+## 10. fleet runtime state
+
+### 10.1 JSON Schema
+
+- `docs/schemas/agent-runtime.schema.json` を参照。
+
+### 10.2 status（エージェント起動状態）
+
+- `starting`: 起動処理中。
+- `running`: 稼働中。
+- `stopped`: 停止済み。
+- `failed`: 起動・実行に失敗。
+
+更新ルール:
+
+- `fleetctl up`（デフォルト `--all`）直後は `starting`、heartbeat 受信後に `running`。
+- `fleetctl up` はデフォルトでフォアグラウンド起動、`-d` 指定時はバックグラウンド起動。
+- `fleetctl down --all` 成功時は `stopped`。
+- プロセス異常終了時は `failed` と `lastError` を更新。
