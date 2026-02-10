@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "buildfleet/roles.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agents"],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "AI agent identifier (e.g. pm-agent, dev-agent-1)"
+          },
+          "role": {
+            "type": "string",
+            "enum": ["PM", "LeadDeveloper", "Developer", "QA"]
+          }
+        }
+      }
+    }
+  }
+}

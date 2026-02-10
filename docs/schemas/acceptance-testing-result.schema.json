@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "buildfleet/acceptance-testing/result.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["resultId", "testId", "executedAt", "executor", "status", "summary"],
+  "properties": {
+    "resultId": {
+      "type": "string",
+      "pattern": "^ATR-[0-9]{8}-[0-9]{3,}$"
+    },
+    "testId": {
+      "type": "string",
+      "pattern": "^AT-[0-9]{3,}$"
+    },
+    "executedAt": { "type": "string", "format": "date-time" },
+    "executor": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["not-run", "passed", "failed"]
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "durationMs": { "type": "integer", "minimum": 0 },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "logs": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
