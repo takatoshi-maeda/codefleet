@@ -44,6 +44,9 @@ export interface RouteResult {
   executions: CommandExecution[];
 }
 
+// Event sources can emit duplicates (fs watchers, polling, manual retries),
+// so routing is deduplicated in a short in-memory window to keep handlers idempotent
+// without requiring every downstream command to implement its own dedupe logic.
 const DEFAULT_DEDUPE_WINDOW_MS = 30_000;
 
 export class EventRouter {
