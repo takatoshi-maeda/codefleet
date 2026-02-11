@@ -16,6 +16,8 @@ export async function ensureStableBacklogSnapshot(backlogDir: string): Promise<v
     throw error;
   }
 
+  // A newer items.json than change-log implies an in-flight or interrupted update.
+  // We fail closed so consumers do not act on potentially stale planning state.
   const latestChangeLogMtimeMs = await latestChangeLogMtime(backlogDir);
   if (latestChangeLogMtimeMs < itemsMtimeMs) {
     throw new BuildfleetError("ERR_BACKLOG_SNAPSHOT_NOT_STABLE", "backlog is being updated; retry later");
