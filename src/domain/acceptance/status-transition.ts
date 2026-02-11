@@ -1,4 +1,4 @@
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { AcceptanceTestCaseStatus } from "../acceptance-testing-spec-model.js";
 
 const ALLOWED_STATUS_TRANSITIONS: Record<AcceptanceTestCaseStatus, AcceptanceTestCaseStatus[]> = {
@@ -17,7 +17,7 @@ export function ensureValidStatusTransition(
   }
 
   if (!ALLOWED_STATUS_TRANSITIONS[from].includes(to)) {
-    throw new BuildfleetError(
+    throw new CodefleetError(
       "ERR_VALIDATION",
       `invalid status transition: ${from} -> ${to}`,
     );

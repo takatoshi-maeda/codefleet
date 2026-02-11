@@ -16,7 +16,7 @@ export interface CommandDispatcher {
   dispatch(command: string, args: string[]): Promise<void>;
 }
 
-export function createBuildfleetCommandDispatcher(binary: string = "buildfleet"): CommandDispatcher {
+export function createCodefleetCommandDispatcher(binary: string = "codefleet"): CommandDispatcher {
   return {
     dispatch(command, args) {
       return new Promise((resolve, reject) => {

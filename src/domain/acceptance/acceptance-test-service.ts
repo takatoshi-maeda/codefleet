@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JsonRepository } from "../../infra/fs/json-repository.js";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import type {
   AcceptanceTestCase,
@@ -12,7 +12,7 @@ import type {
 import type { AcceptanceTestingResult } from "../acceptance-testing-result-model.js";
 import { ensureValidStatusTransition } from "./status-transition.js";
 
-const ACCEPTANCE_DATA_DIR = ".buildfleet/data/acceptance-testing";
+const ACCEPTANCE_DATA_DIR = ".codefleet/data/acceptance-testing";
 
 interface AddAcceptanceTestInput {
   title: string;
@@ -90,7 +90,7 @@ export class AcceptanceTestService {
     const spec = await this.getOrInitializeSpec();
     const found = spec.tests.find((test) => test.id === input.id);
     if (!found) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `acceptance test not found: ${input.id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `acceptance test not found: ${input.id}`);
     }
 
     if (input.status) {
@@ -128,7 +128,7 @@ export class AcceptanceTestService {
     const spec = await this.getOrInitializeSpec();
     const index = spec.tests.findIndex((test) => test.id === id);
     if (index === -1) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `acceptance test not found: ${id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `acceptance test not found: ${id}`);
     }
 
     spec.tests.splice(index, 1);
@@ -140,7 +140,7 @@ export class AcceptanceTestService {
     const spec = await this.getOrInitializeSpec();
     const target = spec.tests.find((test) => test.id === input.testId);
     if (!target) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `acceptance test not found: ${input.testId}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `acceptance test not found: ${input.testId}`);
     }
 
     const now = new Date();
@@ -206,7 +206,7 @@ export class AcceptanceTestService {
     try {
       return await this.specRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         const now = new Date().toISOString();
         const initial: AcceptanceTestingSpec = {
           version: 1,

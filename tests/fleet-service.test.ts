@@ -33,10 +33,10 @@ class FakeAppServerClient {
 
 describe("FleetService", () => {
   it("transitions runtime/session state on up and down", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-fleet-"));
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
-    const runtimeDir = path.join(tempDir, ".buildfleet/runtime");
-    const logDir = path.join(tempDir, ".buildfleet/logs/agents");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
 
     await fs.mkdir(path.dirname(rolesPath), { recursive: true });
     await fs.writeFile(
@@ -71,10 +71,10 @@ describe("FleetService", () => {
   });
 
   it("filters by role and tails logs", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-fleet-"));
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
-    const runtimeDir = path.join(tempDir, ".buildfleet/runtime");
-    const logDir = path.join(tempDir, ".buildfleet/logs/agents");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
 
     await fs.mkdir(path.dirname(rolesPath), { recursive: true });
     await fs.writeFile(

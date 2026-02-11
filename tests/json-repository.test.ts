@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { AcceptanceTestingSpec } from "../src/domain/acceptance-testing-spec-model.js";
 import { SCHEMA_PATHS } from "../src/domain/schema-paths.js";
 import { JsonRepository } from "../src/infra/fs/json-repository.js";
-import { BuildfleetError } from "../src/shared/errors.js";
+import { CodefleetError } from "../src/shared/errors.js";
 
 const validSpec: AcceptanceTestingSpec = {
   version: 1,
@@ -25,7 +25,7 @@ const validSpec: AcceptanceTestingSpec = {
 
 describe("JsonRepository", () => {
   it("loads valid JSON and validates against schema", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-json-repo-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-json-repo-"));
     const targetFile = path.join(tempDir, "spec.json");
     await fs.writeFile(targetFile, JSON.stringify(validSpec), "utf8");
 
@@ -35,7 +35,7 @@ describe("JsonRepository", () => {
   });
 
   it("fails with ERR_VALIDATION for invalid JSON content", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-json-repo-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-json-repo-"));
     const targetFile = path.join(tempDir, "spec.json");
 
     const invalidSpec = { ...validSpec, tests: [{ ...validSpec.tests[0], id: "INVALID-ID" }] };
@@ -43,26 +43,26 @@ describe("JsonRepository", () => {
 
     const repo = new JsonRepository<AcceptanceTestingSpec>(targetFile, SCHEMA_PATHS.acceptanceTestingSpec);
 
-    await expect(repo.get()).rejects.toMatchObject<Partial<BuildfleetError>>({
+    await expect(repo.get()).rejects.toMatchObject<Partial<CodefleetError>>({
       code: "ERR_VALIDATION",
     });
   });
 
   it("fails pre-validation before save for invalid entity", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-json-repo-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-json-repo-"));
     const targetFile = path.join(tempDir, "spec.json");
 
     const repo = new JsonRepository<AcceptanceTestingSpec>(targetFile, SCHEMA_PATHS.acceptanceTestingSpec);
 
     const invalidSpec = { ...validSpec, version: 0 } as AcceptanceTestingSpec;
 
-    await expect(repo.save(invalidSpec)).rejects.toMatchObject<Partial<BuildfleetError>>({
+    await expect(repo.save(invalidSpec)).rejects.toMatchObject<Partial<CodefleetError>>({
       code: "ERR_VALIDATION",
     });
   });
 
   it("resolves schema paths independent of cwd", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-json-repo-cwd-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-json-repo-cwd-"));
     const targetFile = path.join(tempDir, "spec.json");
     await fs.writeFile(targetFile, JSON.stringify(validSpec), "utf8");
 

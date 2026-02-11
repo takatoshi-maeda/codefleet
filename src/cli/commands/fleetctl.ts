@@ -6,7 +6,7 @@ export function createFleetctlCommand(): Command {
   const service = new FleetService();
 
   const cmd = new Command("fleetctl");
-  cmd.description("Control buildfleet agent processes.");
+  cmd.description("Control codefleet agent processes.");
 
   cmd
     .command("status")

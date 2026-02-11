@@ -3,12 +3,12 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { AcceptanceTestService } from "../src/domain/acceptance/acceptance-test-service.js";
-import { BuildfleetError } from "../src/shared/errors.js";
+import { CodefleetError } from "../src/shared/errors.js";
 
 describe("AcceptanceTestService", () => {
   it("adds a result to results/*.json and updates spec lastExecutionStatus", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-acceptance-"));
-    const dataDir = path.join(tempDir, ".buildfleet/data/acceptance-testing");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
     const service = new AcceptanceTestService(dataDir);
 
     const test = await service.add({
@@ -39,8 +39,8 @@ describe("AcceptanceTestService", () => {
   });
 
   it("self-heals cached status from latest result json", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-acceptance-"));
-    const dataDir = path.join(tempDir, ".buildfleet/data/acceptance-testing");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
     const service = new AcceptanceTestService(dataDir);
 
     const test = await service.add({
@@ -72,8 +72,8 @@ describe("AcceptanceTestService", () => {
   });
 
   it("validates forbidden status transitions", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-acceptance-"));
-    const dataDir = path.join(tempDir, ".buildfleet/data/acceptance-testing");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
     const service = new AcceptanceTestService(dataDir);
 
     const test = await service.add({
@@ -88,14 +88,14 @@ describe("AcceptanceTestService", () => {
         id: test.id,
         status: "in-progress",
       }),
-    ).rejects.toMatchObject<Partial<BuildfleetError>>({
+    ).rejects.toMatchObject<Partial<CodefleetError>>({
       code: "ERR_VALIDATION",
     });
   });
 
   it("appends and removes notes", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-acceptance-"));
-    const dataDir = path.join(tempDir, ".buildfleet/data/acceptance-testing");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
     const service = new AcceptanceTestService(dataDir);
 
     const test = await service.add({

@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 
 export async function ensureStableBacklogSnapshot(backlogDir: string): Promise<void> {
   const itemsPath = path.join(backlogDir, "items.json");
@@ -20,7 +20,7 @@ export async function ensureStableBacklogSnapshot(backlogDir: string): Promise<v
   // We fail closed so consumers do not act on potentially stale planning state.
   const latestChangeLogMtimeMs = await latestChangeLogMtime(backlogDir);
   if (latestChangeLogMtimeMs < itemsMtimeMs) {
-    throw new BuildfleetError("ERR_BACKLOG_SNAPSHOT_NOT_STABLE", "backlog is being updated; retry later");
+    throw new CodefleetError("ERR_BACKLOG_SNAPSHOT_NOT_STABLE", "backlog is being updated; retry later");
   }
 }
 

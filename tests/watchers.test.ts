@@ -23,7 +23,7 @@ afterEach(async () => {
 
 describe("watchers", () => {
   it("emits git.main.updated when main ref changes", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-git-watch-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-git-watch-"));
     await fs.mkdir(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
 
     const sink = new RecordingSink();
@@ -39,7 +39,7 @@ describe("watchers", () => {
   });
 
   it("emits acceptance.result.created for new result files", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-result-watch-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-result-watch-"));
     const resultsDir = path.join(tempDir, "results");
     await fs.mkdir(resultsDir, { recursive: true });
 

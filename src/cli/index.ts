@@ -8,7 +8,7 @@ export function createCli(): Command {
   const program = new Command();
 
   program
-    .name("buildfleet")
+    .name("codefleet")
     .description("CLI for multi-agent workflow orchestration")
     .version("0.1.0");
 

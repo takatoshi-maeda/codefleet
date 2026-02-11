@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JsonRepository } from "../../infra/fs/json-repository.js";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { AcceptanceTestingSpec } from "../acceptance-testing-spec-model.js";
 import type {
   BacklogEpic,
@@ -17,9 +17,9 @@ import { ensureAcceptanceTestIdsExist } from "../relations/acceptance-test-relat
 import { ensureStableBacklogSnapshot } from "./stable-snapshot-guard.js";
 import { ensureValidEpicStatusTransition, ensureValidItemStatusTransition } from "./status-transition.js";
 
-const DEFAULT_BACKLOG_DIR = ".buildfleet/data/backlog";
-const DEFAULT_ACCEPTANCE_SPEC_PATH = ".buildfleet/data/acceptance-testing/spec.json";
-const DEFAULT_ROLES_PATH = ".buildfleet/roles.json";
+const DEFAULT_BACKLOG_DIR = ".codefleet/data/backlog";
+const DEFAULT_ACCEPTANCE_SPEC_PATH = ".codefleet/data/acceptance-testing/spec.json";
+const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 
 type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper";
 
@@ -103,7 +103,7 @@ export class BacklogService {
 
     const role = await this.resolveRole(input.actorId);
     if (input.includeHidden && role !== "Orchestrator") {
-      throw new BuildfleetError("ERR_VALIDATION", "--include-hidden is allowed for Orchestrator role only");
+      throw new CodefleetError("ERR_VALIDATION", "--include-hidden is allowed for Orchestrator role only");
     }
 
     const items = await this.getOrInitializeItems();
@@ -149,7 +149,7 @@ export class BacklogService {
     const items = await this.getOrInitializeItems();
     const epic = items.epics.find((value) => value.id === input.id);
     if (!epic) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `epic not found: ${input.id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `epic not found: ${input.id}`);
     }
 
     if (input.acceptanceTestIds) {
@@ -188,12 +188,12 @@ export class BacklogService {
     const items = await this.getOrInitializeItems();
     const index = items.epics.findIndex((epic) => epic.id === id);
     if (index === -1) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `epic not found: ${id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `epic not found: ${id}`);
     }
 
     const linkedItems = items.items.filter((item) => item.epicId === id);
     if (!force && linkedItems.length > 0) {
-      throw new BuildfleetError("ERR_CONFLICT", `epic has linked items: ${id}`);
+      throw new CodefleetError("ERR_CONFLICT", `epic has linked items: ${id}`);
     }
 
     items.epics.splice(index, 1);
@@ -209,7 +209,7 @@ export class BacklogService {
     const items = await this.getOrInitializeItems();
     const epic = items.epics.find((value) => value.id === input.epicId);
     if (!epic) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `epic not found: ${input.epicId}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `epic not found: ${input.epicId}`);
     }
 
     const spec = await this.getAcceptanceSpecForValidation(input.acceptanceTestIds);
@@ -237,7 +237,7 @@ export class BacklogService {
     const items = await this.getOrInitializeItems();
     const item = items.items.find((value) => value.id === input.id);
     if (!item) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `item not found: ${input.id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `item not found: ${input.id}`);
     }
 
     if (input.acceptanceTestIds) {
@@ -272,7 +272,7 @@ export class BacklogService {
     const items = await this.getOrInitializeItems();
     const index = items.items.findIndex((item) => item.id === id);
     if (index === -1) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `item not found: ${id}`);
+      throw new CodefleetError("ERR_NOT_FOUND", `item not found: ${id}`);
     }
 
     items.items.splice(index, 1);
@@ -285,7 +285,7 @@ export class BacklogService {
     try {
       return await this.itemsRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         const now = new Date().toISOString();
         const initial: BacklogItems = { version: 1, updatedAt: now, epics: [], items: [] };
         await this.itemsRepository.save(initial);
@@ -302,8 +302,8 @@ export class BacklogService {
     try {
       return await this.acceptanceSpecRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
-        throw new BuildfleetError("ERR_VALIDATION", "acceptance test spec not found");
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
+        throw new CodefleetError("ERR_VALIDATION", "acceptance test spec not found");
       }
       throw error;
     }
@@ -318,7 +318,7 @@ export class BacklogService {
       const roles = await this.rolesRepository.get();
       return roles.agents.find((agent) => agent.id === actorId)?.role ?? "Developer";
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         return "Developer";
       }
       throw error;

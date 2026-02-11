@@ -1,4 +1,4 @@
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { BacklogEpicStatus, BacklogItemStatus } from "../backlog-items-model.js";
 
 const EPIC_TRANSITIONS: Record<BacklogEpicStatus, BacklogEpicStatus[]> = {
@@ -28,7 +28,7 @@ export function ensureValidEpicStatusTransition(
     return;
   }
   if (!EPIC_TRANSITIONS[from].includes(to)) {
-    throw new BuildfleetError("ERR_VALIDATION", `invalid epic status transition: ${from} -> ${to}`);
+    throw new CodefleetError("ERR_VALIDATION", `invalid epic status transition: ${from} -> ${to}`);
   }
 }
 
@@ -44,6 +44,6 @@ export function ensureValidItemStatusTransition(
     return;
   }
   if (!ITEM_TRANSITIONS[from].includes(to)) {
-    throw new BuildfleetError("ERR_VALIDATION", `invalid item status transition: ${from} -> ${to}`);
+    throw new CodefleetError("ERR_VALIDATION", `invalid item status transition: ${from} -> ${to}`);
   }
 }

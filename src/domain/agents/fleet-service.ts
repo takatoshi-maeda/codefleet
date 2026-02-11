@@ -3,15 +3,15 @@ import path from "node:path";
 import { AppServerClient } from "../../infra/appserver/app-server-client.js";
 import { JsonRepository } from "../../infra/fs/json-repository.js";
 import { FleetProcessManager } from "../../infra/process/fleet-process-manager.js";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { AgentRuntime, AgentRuntimeCollection } from "../agent-runtime-model.js";
 import type { AppServerSession, AppServerSessionCollection } from "../app-server-session-model.js";
 import type { AgentRole, Roles } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 
-const DEFAULT_ROLES_PATH = ".buildfleet/roles.json";
-const DEFAULT_RUNTIME_DIR = ".buildfleet/runtime";
-const DEFAULT_LOG_DIR = ".buildfleet/logs/agents";
+const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
+const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
+const DEFAULT_LOG_DIR = ".codefleet/logs/agents";
 
 export interface FleetStatus {
   summary: "running" | "stopped" | "degraded";
@@ -188,7 +188,7 @@ export class FleetService {
   private async resolveTargetAgents(input: TargetInput): Promise<Roles["agents"]> {
     const roles = await this.getOrInitializeRoles();
     if (roles.agents.length === 0) {
-      throw new BuildfleetError("ERR_NOT_FOUND", "no agents defined in roles.json");
+      throw new CodefleetError("ERR_NOT_FOUND", "no agents defined in roles.json");
     }
 
     if (input.role) {
@@ -199,14 +199,14 @@ export class FleetService {
       return roles.agents;
     }
 
-    throw new BuildfleetError("ERR_VALIDATION", "either --all or --role must be specified");
+    throw new CodefleetError("ERR_VALIDATION", "either --all or --role must be specified");
   }
 
   private async getOrInitializeRoles(): Promise<Roles> {
     try {
       return await this.rolesRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         const initial: Roles = { agents: [] };
         await this.rolesRepository.save(initial);
         return initial;
@@ -220,7 +220,7 @@ export class FleetService {
     try {
       return await this.runtimeRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         await fs.mkdir(this.runtimeDir, { recursive: true });
         const now = new Date().toISOString();
         const initial: AgentRuntimeCollection = { version: 1, updatedAt: now, agents: [] };
@@ -236,7 +236,7 @@ export class FleetService {
     try {
       return await this.sessionRepository.get();
     } catch (error) {
-      if (error instanceof BuildfleetError && error.code === "ERR_NOT_FOUND") {
+      if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         await fs.mkdir(this.runtimeDir, { recursive: true });
         const now = new Date().toISOString();
         const initial: AppServerSessionCollection = { version: 1, updatedAt: now, sessions: [] };

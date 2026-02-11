@@ -6,7 +6,7 @@ import { atomicWriteJson } from "../src/infra/fs/atomic-write.js";
 
 describe("atomicWriteJson", () => {
   it("writes JSON with temp-file rename and leaves no temp file behind", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-atomic-"));
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-atomic-"));
     const targetFile = path.join(tempDir, "state.json");
 
     await atomicWriteJson(targetFile, { id: "A-001", status: "ready" });

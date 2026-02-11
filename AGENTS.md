@@ -2,7 +2,7 @@
 
 ## Purpose
 
-- `buildfleet` is a product that orchestrates teams where multiple coding agents run concurrently.
+- `codefleet` is a product that orchestrates teams where multiple coding agents run concurrently.
 - It reads and decomposes documents into requirements, and enables multiple agents to collaborate around acceptance-test specifications and backlog items as a shared hub.
 
 ## Basic Rules for Changes

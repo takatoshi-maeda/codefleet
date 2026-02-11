@@ -12,7 +12,7 @@ export class ResultFileWatcher {
 
   constructor(
     private readonly sink: EventSink,
-    private readonly resultsDir: string = path.join(process.cwd(), ".buildfleet", "data", "acceptance-testing", "results"),
+    private readonly resultsDir: string = path.join(process.cwd(), ".codefleet", "data", "acceptance-testing", "results"),
     private readonly pollIntervalMs: number = 3_000,
   ) {}
 

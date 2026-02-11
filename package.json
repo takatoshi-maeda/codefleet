@@ -1,10 +1,10 @@
 {
-  "name": "buildfleet",
+  "name": "codefleet",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "buildfleet": "./bin/buildfleet"
+    "codefleet": "./bin/codefleet"
   },
   "files": [
     "dist",

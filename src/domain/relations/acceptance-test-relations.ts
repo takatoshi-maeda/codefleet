@@ -1,4 +1,4 @@
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { AcceptanceTestingSpec } from "../acceptance-testing-spec-model.js";
 
 export function ensureAcceptanceTestIdsExist(
@@ -8,6 +8,6 @@ export function ensureAcceptanceTestIdsExist(
   const availableIds = new Set(spec.tests.map((test) => test.id));
   const missing = acceptanceTestIds.filter((id) => !availableIds.has(id));
   if (missing.length > 0) {
-    throw new BuildfleetError("ERR_VALIDATION", `acceptance tests not found: ${missing.join(", ")}`);
+    throw new CodefleetError("ERR_VALIDATION", `acceptance tests not found: ${missing.join(", ")}`);
   }
 }

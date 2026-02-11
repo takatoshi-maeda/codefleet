@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 import type { Repository } from "../../shared/repository.js";
 import { atomicWriteJson } from "./atomic-write.js";
 import { validateAgainstSchema } from "./json-schema-validator.js";
@@ -15,14 +15,14 @@ export class JsonRepository<TEntity> implements Repository<TEntity> {
     try {
       raw = await fs.readFile(this.filePath, "utf8");
     } catch (error) {
-      throw new BuildfleetError("ERR_NOT_FOUND", `file not found: ${this.filePath}`, error);
+      throw new CodefleetError("ERR_NOT_FOUND", `file not found: ${this.filePath}`, error);
     }
 
     let parsed: unknown;
     try {
       parsed = JSON.parse(raw);
     } catch (error) {
-      throw new BuildfleetError("ERR_VALIDATION", `file is not valid JSON: ${this.filePath}`, error);
+      throw new CodefleetError("ERR_VALIDATION", `file is not valid JSON: ${this.filePath}`, error);
     }
 
     return validateAgainstSchema<TEntity>(this.schemaPath, parsed, `read validation failed (${this.filePath})`);

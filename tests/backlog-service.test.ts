@@ -3,14 +3,14 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
-import { BuildfleetError } from "../src/shared/errors.js";
+import { CodefleetError } from "../src/shared/errors.js";
 
 describe("BacklogService", () => {
   it("returns ERR_BACKLOG_SNAPSHOT_NOT_STABLE when wait-implementation listing is unstable", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-backlog-"));
-    const backlogDir = path.join(tempDir, ".buildfleet/data/backlog");
-    const acceptanceSpecPath = path.join(tempDir, ".buildfleet/data/acceptance-testing/spec.json");
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
 
     await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
     await fs.writeFile(
@@ -45,16 +45,16 @@ describe("BacklogService", () => {
       await fs.unlink(path.join(changeLogDir, changeLog));
     }
 
-    await expect(service.list({ status: "wait-implementation" })).rejects.toMatchObject<Partial<BuildfleetError>>({
+    await expect(service.list({ status: "wait-implementation" })).rejects.toMatchObject<Partial<CodefleetError>>({
       code: "ERR_BACKLOG_SNAPSHOT_NOT_STABLE",
     });
   });
 
   it("allows --include-hidden only for Orchestrator", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-backlog-"));
-    const backlogDir = path.join(tempDir, ".buildfleet/data/backlog");
-    const acceptanceSpecPath = path.join(tempDir, ".buildfleet/data/acceptance-testing/spec.json");
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
 
     await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
     await fs.writeFile(
@@ -79,7 +79,7 @@ describe("BacklogService", () => {
     });
 
     await expect(service.list({ includeHidden: true, actorId: "dev-agent" })).rejects.toMatchObject<
-      Partial<BuildfleetError>
+      Partial<CodefleetError>
     >({ code: "ERR_VALIDATION" });
 
     const listedByPm = await service.list({ includeHidden: true, actorId: "pm-agent" });
@@ -87,10 +87,10 @@ describe("BacklogService", () => {
   });
 
   it("validates acceptanceTestIds references", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-backlog-"));
-    const backlogDir = path.join(tempDir, ".buildfleet/data/backlog");
-    const acceptanceSpecPath = path.join(tempDir, ".buildfleet/data/acceptance-testing/spec.json");
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
 
     await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
     await fs.writeFile(
@@ -106,17 +106,17 @@ describe("BacklogService", () => {
 
     await expect(
       service.addEpic({ title: "invalid refs", acceptanceTestIds: ["AT-404"] }),
-    ).rejects.toMatchObject<Partial<BuildfleetError>>({ code: "ERR_VALIDATION" });
+    ).rejects.toMatchObject<Partial<CodefleetError>>({ code: "ERR_VALIDATION" });
 
     const epic = await service.addEpic({ title: "valid refs", acceptanceTestIds: ["AT-001"] });
     expect(epic.acceptanceTestIds).toEqual(["AT-001"]);
   });
 
   it("appends and removes notes for epic and item", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-backlog-"));
-    const backlogDir = path.join(tempDir, ".buildfleet/data/backlog");
-    const acceptanceSpecPath = path.join(tempDir, ".buildfleet/data/acceptance-testing/spec.json");
-    const rolesPath = path.join(tempDir, ".buildfleet/roles.json");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
 
     await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
     await fs.writeFile(

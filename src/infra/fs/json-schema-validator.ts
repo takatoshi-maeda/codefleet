@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { ErrorObject, ValidateFunction } from "ajv";
 import * as Ajv2020Module from "ajv/dist/2020.js";
 import * as AjvFormatsModule from "ajv-formats";
-import { BuildfleetError } from "../../shared/errors.js";
+import { CodefleetError } from "../../shared/errors.js";
 
 const Ajv2020Ctor = ((Ajv2020Module as unknown) as { default?: new (...args: unknown[]) => unknown }).default ??
   ((Ajv2020Module as unknown) as new (...args: unknown[]) => unknown);
@@ -47,21 +47,21 @@ async function loadValidator(schemaPath: string): Promise<ValidateFunction> {
   try {
     schemaRaw = await fs.readFile(resolvedPath, "utf8");
   } catch (error) {
-    throw new BuildfleetError("ERR_VALIDATION", `schema file could not be read: ${resolvedPath}`, error);
+    throw new CodefleetError("ERR_VALIDATION", `schema file could not be read: ${resolvedPath}`, error);
   }
 
   let schema: unknown;
   try {
     schema = JSON.parse(schemaRaw);
   } catch (error) {
-    throw new BuildfleetError("ERR_VALIDATION", `schema file is not valid JSON: ${resolvedPath}`, error);
+    throw new CodefleetError("ERR_VALIDATION", `schema file is not valid JSON: ${resolvedPath}`, error);
   }
 
   let validator: ValidateFunction;
   try {
     validator = ajv.compile(schema);
   } catch (error) {
-    throw new BuildfleetError("ERR_VALIDATION", `schema file could not be compiled: ${resolvedPath}`, error);
+    throw new CodefleetError("ERR_VALIDATION", `schema file could not be compiled: ${resolvedPath}`, error);
   }
 
   validatorCache.set(resolvedPath, validator);
@@ -73,7 +73,7 @@ export async function validateAgainstSchema<T>(schemaPath: string, data: unknown
 
   const valid = validator(data);
   if (!valid) {
-    throw new BuildfleetError(
+    throw new CodefleetError(
       "ERR_VALIDATION",
       `${context}: ${formatValidationErrors(validator.errors)}`,
       validator.errors,
