@@ -89,6 +89,9 @@ export class BacklogService {
 
   async list(input: ListInput = {}): Promise<BacklogItems> {
     if (input.status === "wait-implementation") {
+      // wait-implementation is consumed as a "safe to start" queue.
+      // Guarding with change-log mtime prevents developers from reading a half-written
+      // snapshot where items.json moved forward but audit log has not caught up yet.
       await ensureStableBacklogSnapshot(this.backlogDir);
     }
 
@@ -305,6 +308,9 @@ export class BacklogService {
   }
 
   private async persistWithChangeLog(items: BacklogItems, actor: AgentRole, lines: string[]): Promise<void> {
+    // Keep persistence order explicit: items.json first, then change-log.
+    // If the process crashes between these writes, snapshot guard detects the gap and
+    // blocks wait-implementation reads until a complete change-log is present.
     await this.itemsRepository.save(items);
     await this.writeChangeLog(actor, lines, items.version);
   }
@@ -380,6 +386,9 @@ function nextItemId(items: BacklogItem[]): string {
 }
 
 function isVisible(epic: BacklogEpic, epicsById: Map<string, BacklogEpic>): boolean {
+  // Visibility is intentionally derived from dependency completion only.
+  // The caller may still include hidden epics explicitly, but default list output
+  // must hide blocked planning branches until dependencies are fully done.
   if (epic.visibility.type !== "blocked-until-epic-complete") {
     return true;
   }
