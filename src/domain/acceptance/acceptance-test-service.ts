@@ -54,6 +54,9 @@ export class AcceptanceTestService {
   }
 
   async list(): Promise<AcceptanceTestCase[]> {
+    // `results/*.json` is the canonical execution history and `spec.json` is a cache view.
+    // We heal at read-time so list callers always observe the latest status even if a
+    // previous write failed between result persistence and spec cache update.
     await this.selfHealLastExecutionStatus();
     const spec = await this.getOrInitializeSpec();
     return spec.tests;
@@ -149,6 +152,8 @@ export class AcceptanceTestService {
       SCHEMA_PATHS.acceptanceTestingResult,
     );
 
+    // Persist result first by design: docs define results as source of truth and spec as cache.
+    // This order guarantees we never publish a cache status that has no backing result file.
     await resultRepository.save(result);
 
     target.lastExecutionStatus = result.status;
@@ -250,6 +255,7 @@ export class AcceptanceTestService {
       const result = await repository.get();
 
       const existing = latest.get(result.testId);
+      // `executedAt` is ISO8601 UTC, so lexical comparison is stable and cheaper than Date parse.
       if (!existing || result.executedAt > existing.executedAt) {
         latest.set(result.testId, { status: result.status, executedAt: result.executedAt });
       }
