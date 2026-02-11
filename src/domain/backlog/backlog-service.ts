@@ -21,7 +21,7 @@ const DEFAULT_BACKLOG_DIR = ".buildfleet/data/backlog";
 const DEFAULT_ACCEPTANCE_SPEC_PATH = ".buildfleet/data/acceptance-testing/spec.json";
 const DEFAULT_ROLES_PATH = ".buildfleet/roles.json";
 
-type AgentRole = "PM" | "Developer" | "QA";
+type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper";
 
 interface ListInput {
   status?: BacklogEpicStatus | BacklogItemStatus;
@@ -96,8 +96,8 @@ export class BacklogService {
     }
 
     const role = await this.resolveRole(input.actorId);
-    if (input.includeHidden && role !== "PM") {
-      throw new BuildfleetError("ERR_VALIDATION", "--include-hidden is allowed for PM role only");
+    if (input.includeHidden && role !== "Orchestrator") {
+      throw new BuildfleetError("ERR_VALIDATION", "--include-hidden is allowed for Orchestrator role only");
     }
 
     const items = await this.getOrInitializeItems();

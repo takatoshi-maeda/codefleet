@@ -9,7 +9,7 @@ export class BacklogPoller {
 
   constructor(
     private readonly sink: EventSink,
-    private readonly actor: "Developer" | "QA",
+    private readonly actor: "Developer" | "Gatekeeper",
     private readonly pollIntervalMs: number = 10_000,
   ) {}
 

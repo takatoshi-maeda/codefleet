@@ -12,7 +12,7 @@ export function createBacklogCommand(): Command {
     .command("list")
     .description("List epics and items")
     .option("--status <status>", "Filter by status")
-    .option("--include-hidden", "Include hidden epics/items (PM only)")
+    .option("--include-hidden", "Include hidden epics/items (Orchestrator only)")
     .option("--actor-id <actorId>", "Current actor id")
     .action(async (options) => {
       const listed = await service.list({
@@ -50,7 +50,7 @@ export function createBacklogCommand(): Command {
     .command("list")
     .description("List epics")
     .option("--status <status>", "Filter by status")
-    .option("--include-hidden", "Include hidden epics (PM only)")
+    .option("--include-hidden", "Include hidden epics (Orchestrator only)")
     .option("--actor-id <actorId>", "Current actor id")
     .action(async (options) => {
       const listed = await service.list({
@@ -124,7 +124,7 @@ export function createBacklogCommand(): Command {
     .command("list")
     .description("List backlog items")
     .option("--status <status>", "Filter by status")
-    .option("--include-hidden", "Include hidden items (PM only)")
+    .option("--include-hidden", "Include hidden items (Orchestrator only)")
     .option("--actor-id <actorId>", "Current actor id")
     .action(async (options) => {
       const listed = await service.list({

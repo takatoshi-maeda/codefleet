@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 
 export type SystemEvent =
-  | { type: "manual.triggered"; actor: "PM" | "QA" | "Developer" }
+  | { type: "manual.triggered"; actor: "Orchestrator" | "Gatekeeper" | "Developer" }
   | { type: "git.main.updated"; commit: string }
   | { type: "acceptance.result.created"; path: string }
-  | { type: "backlog.poll.tick"; actor: "Developer" | "QA"; at: string }
+  | { type: "backlog.poll.tick"; actor: "Developer" | "Gatekeeper"; at: string }
   | { type: "fleet.lifecycle.changed"; status: "starting" | "running" | "stopped" | "degraded" };
 
 export interface CommandExecution {
