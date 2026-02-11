@@ -42,7 +42,7 @@ describe("FleetService", () => {
     await fs.writeFile(
       rolesPath,
       JSON.stringify(
-        { agents: [{ id: "pm-agent", role: "PM" }, { id: "dev-agent", role: "Developer" }] },
+        { agents: [{ id: "pm-agent", role: "Orchestrator" }, { id: "dev-agent", role: "Developer" }] },
         null,
         2,
       ),
@@ -80,7 +80,7 @@ describe("FleetService", () => {
     await fs.writeFile(
       rolesPath,
       JSON.stringify(
-        { agents: [{ id: "pm-agent", role: "PM" }, { id: "dev-agent", role: "Developer" }] },
+        { agents: [{ id: "pm-agent", role: "Orchestrator" }, { id: "dev-agent", role: "Developer" }] },
         null,
         2,
       ),

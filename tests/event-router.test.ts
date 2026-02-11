@@ -14,7 +14,7 @@ describe("EventRouter", () => {
     const dispatcher = new RecordingDispatcher();
     const router = new EventRouter(dispatcher, { dedupeWindowMs: 1_000 });
 
-    await router.route({ type: "manual.triggered", actor: "PM" });
+    await router.route({ type: "manual.triggered", actor: "Orchestrator" });
     await router.route({ type: "git.main.updated", commit: "abc123" });
     await router.route({ type: "acceptance.result.created", path: "/tmp/ATR-1.json" });
     await router.route({ type: "backlog.poll.tick", actor: "Developer", at: "2026-01-01T00:00:00.000Z" });

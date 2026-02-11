@@ -48,7 +48,7 @@ describe("BacklogService", () => {
     });
   });
 
-  it("allows --include-hidden only for PM", async () => {
+  it("allows --include-hidden only for Orchestrator", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "buildfleet-backlog-"));
     const backlogDir = path.join(tempDir, ".buildfleet/data/backlog");
     const acceptanceSpecPath = path.join(tempDir, ".buildfleet/data/acceptance-testing/spec.json");
@@ -64,7 +64,7 @@ describe("BacklogService", () => {
     await fs.mkdir(path.dirname(rolesPath), { recursive: true });
     await fs.writeFile(
       rolesPath,
-      JSON.stringify({ agents: [{ id: "pm-agent", role: "PM" }, { id: "dev-agent", role: "Developer" }] }, null, 2),
+      JSON.stringify({ agents: [{ id: "pm-agent", role: "Orchestrator" }, { id: "dev-agent", role: "Developer" }] }, null, 2),
       "utf8",
     );
 
