@@ -173,6 +173,8 @@ describe("FleetService", () => {
     expect(appServer.startedTurns[0]?.input).toHaveLength(1);
     expect(appServer.startedTurns[0]?.input[0]?.type).toBe("text");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Please take on the role of Gatekeeper for this task.");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Trigger event: docs.update");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("acceptance-test.update.md");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Changed paths:");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("docs/spec.md");
 

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getAgentRoleDefinition, isRoleSubscribedToEvent } from "../src/domain/agents/agent-role-definitions.js";
+import {
+  getAgentRoleDefinition,
+  getRoleEventPromptDefinition,
+  isRoleSubscribedToEvent,
+} from "../src/domain/agents/agent-role-definitions.js";
 
 describe("agent-role-definitions", () => {
   it("keeps event subscriptions by role", () => {
@@ -10,5 +14,17 @@ describe("agent-role-definitions", () => {
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
     expect(isRoleSubscribedToEvent("Gatekeeper", { type: "docs.update", paths: ["docs/a.md"] })).toBe(true);
+  });
+
+  it("maps trigger events to role task prompts", () => {
+    const gatekeeper = getAgentRoleDefinition("Gatekeeper");
+    const mapped = gatekeeper.subscribedEvents["docs.update"];
+    expect(mapped?.triggerEvent).toBe("acceptance-test.update");
+
+    const gatekeeperPrompt = getRoleEventPromptDefinition("Gatekeeper", "docs.update");
+    expect(gatekeeperPrompt.promptEventType).toBe("acceptance-test.update");
+
+    const defaultPrompt = getRoleEventPromptDefinition("Developer", "docs.update");
+    expect(defaultPrompt.promptEventType).toBe("docs.update");
   });
 });

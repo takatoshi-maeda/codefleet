@@ -1,5 +1,8 @@
 ## Current Task
 
+Trigger event: {{triggerEventType}}
+Prompt template: {{promptEventType}}.md
+
 Objectives:
 - First, run `codefleet-acceptance-test --help-for-agent` to load agent-specific usage guidance.
 - Design acceptance tests for the updated documents by using `codefleet-acceptance-test`.

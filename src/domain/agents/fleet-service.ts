@@ -10,6 +10,7 @@ import type { AppServerSession, AppServerSessionCollection } from "../app-server
 import type { AgentEventQueueMessage } from "../events/agent-event-queue-message-model.js";
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
+import { getRoleEventPromptDefinition } from "./agent-role-definitions.js";
 import { renderEventPromptTemplate } from "./event-prompt-template.js";
 import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-startup-prompts.js";
 
@@ -297,7 +298,8 @@ export class FleetService {
 
   private async buildEventPrompt(agentRole: AgentRole, event: SystemEvent): Promise<string> {
     const instructions = await getRoleStartupPrompt(agentRole);
-    const eventPromptTemplate = await getRoleEventPromptTemplate(agentRole, event.type);
+    const eventPromptDefinition = getRoleEventPromptDefinition(agentRole, event.type);
+    const eventPromptTemplate = await getRoleEventPromptTemplate(agentRole, eventPromptDefinition.promptEventType);
     if (!eventPromptTemplate) {
       return instructions.trim();
     }
@@ -305,6 +307,8 @@ export class FleetService {
     const promptContext = {
       ...eventParams,
       event: eventParams,
+      triggerEventType: eventPromptDefinition.triggerEventType,
+      promptEventType: eventPromptDefinition.promptEventType,
     };
     // Fail fast on missing template variables so misconfigured event prompts are
     // surfaced during queue handling instead of silently dropping dynamic context.
