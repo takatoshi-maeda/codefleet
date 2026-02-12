@@ -11,6 +11,7 @@ import type { AgentEventDelivery, AgentEventQueueMessage } from "../events/agent
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import { loadEventPrompt } from "./event-prompt-loader.js";
+import { renderEventPromptTemplate } from "./event-prompt-template.js";
 import { getRoleStartupPrompt } from "./role-startup-prompts.js";
 
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
@@ -293,10 +294,15 @@ export class FleetService {
       return lines.join("\n");
     }
 
-    const eventPrompt = await loadEventPrompt(promptFile);
-    // Event payload is appended in a stable text format so prompt templates can
-    // reference dynamic context without needing per-event parser logic.
-    return `${eventPrompt.trim()}\n\n${lines.join("\n")}`;
+    const eventPromptTemplate = await loadEventPrompt(promptFile);
+    const eventParams = event as unknown as Record<string, unknown>;
+    const promptContext = {
+      ...eventParams,
+      event: eventParams,
+    };
+    // Fail fast on missing template variables so misconfigured event prompts are
+    // surfaced during queue handling instead of silently dropping dynamic context.
+    return renderEventPromptTemplate(eventPromptTemplate, promptContext).trim();
   }
 }
 

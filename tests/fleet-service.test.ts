@@ -163,7 +163,8 @@ describe("FleetService", () => {
     expect(appServer.startedTurns[0]?.agentId).toBe("gatekeeper-1");
     expect(appServer.startedTurns[0]?.threadId).toBe("gatekeeper-1-new-thread");
     expect(appServer.startedTurns[0]?.input).toContain("You are the Gatekeeper processing a `docs.update` event.");
-    expect(appServer.startedTurns[0]?.input).toContain("paths: docs/spec.md");
+    expect(appServer.startedTurns[0]?.input).toContain("Changed paths:");
+    expect(appServer.startedTurns[0]?.input).toContain("docs/spec.md");
 
     const status = await service.status("Gatekeeper");
     expect(status.sessions[0]?.threadId).toBe("gatekeeper-1-new-thread");

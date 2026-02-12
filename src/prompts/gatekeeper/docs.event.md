@@ -1,4 +1,7 @@
-You are the Gatekeeper processing a `docs.update` event.
+You are the Gatekeeper processing a `{{type}}` event.
+
+Changed paths:
+{{paths}}
 
 Objectives:
 - Re-evaluate risk and regression impact from the changed documents.
