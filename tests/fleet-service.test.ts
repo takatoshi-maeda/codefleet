@@ -170,7 +170,6 @@ describe("FleetService", () => {
     });
     expect(emittedEvent).toEqual({
       type: "acceptance-test.update",
-      paths: ["docs/spec.md"],
     });
 
     expect(appServer.startedThreads).toEqual([
@@ -184,8 +183,6 @@ describe("FleetService", () => {
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Please take on the role of Gatekeeper for this task.");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Trigger event: docs.update");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("acceptance-test.update.md");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Changed paths:");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("docs/spec.md");
     expect(appServer.completedTurns).toEqual([
       { agentId: "gatekeeper-1", threadId: "gatekeeper-1-new-thread", turnId: "gatekeeper-1-event-turn" },
     ]);
@@ -213,7 +210,7 @@ describe("FleetService", () => {
     const emittedEvent = await service.dispatchAgentEvent({
       agentId: "developer-1",
       agentRole: "Developer",
-      event: { type: "acceptance-test.update", paths: ["docs/spec.md"] },
+      event: { type: "acceptance-test.update" },
     });
     expect(emittedEvent).toBeNull();
   });
@@ -236,9 +233,9 @@ describe("FleetService", () => {
     const emittedEvent = await service.dispatchAgentEvent({
       agentId: "orchestrator-1",
       agentRole: "Orchestrator",
-      event: { type: "acceptance-test.update", paths: ["docs/spec.md"] },
+      event: { type: "acceptance-test.update" },
     });
 
-    expect(emittedEvent).toEqual({ type: "backlog.update", paths: ["docs/spec.md"] });
+    expect(emittedEvent).toEqual({ type: "backlog.update" });
   });
 });

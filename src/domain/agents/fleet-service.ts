@@ -271,10 +271,7 @@ export class FleetService {
     if (eventPromptDefinition.promptEventType === input.event.type) {
       return null;
     }
-    return {
-      type: eventPromptDefinition.promptEventType,
-      paths: [...input.event.paths],
-    };
+    return buildFollowUpEvent(eventPromptDefinition.promptEventType, input.event);
   }
 
   private async getOrInitializeRuntime(): Promise<AgentRuntimeCollection> {
@@ -344,6 +341,19 @@ function normalizeLanguage(lang: string | undefined): string | undefined {
   }
   const trimmed = lang.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildFollowUpEvent(nextEventType: SystemEvent["type"], sourceEvent: SystemEvent): SystemEvent {
+  if (nextEventType === "docs.update") {
+    return {
+      type: "docs.update",
+      paths: sourceEvent.type === "docs.update" ? [...sourceEvent.paths] : [],
+    };
+  }
+  if (nextEventType === "acceptance-test.update") {
+    return { type: "acceptance-test.update" };
+  }
+  return { type: "backlog.update" };
 }
 
 interface TargetAgent {

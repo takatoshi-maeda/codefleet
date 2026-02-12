@@ -16,6 +16,3 @@ Output requirements:
 - Make each test concrete, verifiable, and implementation-agnostic where possible.
 - Explicitly state assumptions you had to decide due to missing information.
 - Include a clear Definition of Done: all listed acceptance tests passing means the user-desired outcome is complete.
-
-Changed paths:
-{{paths}}

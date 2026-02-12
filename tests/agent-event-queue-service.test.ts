@@ -107,7 +107,7 @@ describe("AgentEventQueueService", () => {
     await fs.writeFile(path.join(runtimeDir, "agents.json"), `${JSON.stringify(runtimes, null, 2)}\n`, "utf8");
 
     const service = new AgentEventQueueService(runtimeDir);
-    const result = await service.enqueueToRunningAgents({ type: "acceptance-test.update", paths: ["docs/spec.md"] });
+    const result = await service.enqueueToRunningAgents({ type: "acceptance-test.update" });
 
     expect(result.enqueuedAgentIds).toEqual(["orchestrator-1"]);
     expect(result.files).toHaveLength(1);

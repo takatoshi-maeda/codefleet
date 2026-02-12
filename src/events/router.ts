@@ -2,8 +2,8 @@ import { spawn } from "node:child_process";
 
 export type SystemEvent =
   | { type: "docs.update"; paths: string[] }
-  | { type: "acceptance-test.update"; paths: string[] }
-  | { type: "backlog.update"; paths: string[] };
+  | { type: "acceptance-test.update" }
+  | { type: "backlog.update" };
 
 export interface CommandExecution {
   executable: string;
@@ -82,6 +82,9 @@ export class EventRouter {
   }
 
   private createDedupeKey(event: SystemEvent): string {
+    if (event.type !== "docs.update") {
+      return event.type;
+    }
     // Order-independent key avoids duplicate processing when the same path set arrives in a different order.
     return `${event.type}:${[...event.paths].sort().join("|")}`;
   }
