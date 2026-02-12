@@ -15,10 +15,16 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
 
   const cmd = new Command("trigger");
   cmd.description("Trigger a system event manually");
+  cmd.configureHelp({
+    // Commander appends `[options]` for any command with options. For event-style
+    // subcommands this is noisy, so keep only command name and explicit args.
+    subcommandTerm: (subcommand: Command) => `${subcommand.name()}${formatRegisteredArgs(subcommand)}`,
+  });
 
   cmd
     .command("manual.triggered")
     .description("SystemEvent.type=manual.triggered")
+    .summary("--actor <actor>")
     .requiredOption("--actor <actor>", "Orchestrator | Gatekeeper | Developer")
     .action(async (options: { actor: string }) => {
       if (!isManualActor(options.actor)) {
@@ -30,6 +36,7 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
   cmd
     .command("git.main.updated")
     .description("SystemEvent.type=git.main.updated")
+    .summary("--commit <commit>")
     .requiredOption("--commit <commit>", "Updated commit hash")
     .action(async (options: { commit: string }) => {
       await executeRoute(router, { type: "git.main.updated", commit: options.commit });
@@ -38,6 +45,7 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
   cmd
     .command("acceptance.result.created")
     .description("SystemEvent.type=acceptance.result.created")
+    .summary("--path <path>")
     .requiredOption("--path <path>", "Path to acceptance result file")
     .action(async (options: { path: string }) => {
       await executeRoute(router, { type: "acceptance.result.created", path: options.path });
@@ -46,6 +54,7 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
   cmd
     .command("backlog.poll.tick")
     .description("SystemEvent.type=backlog.poll.tick")
+    .summary("--actor <actor> --at <at>")
     .requiredOption("--actor <actor>", "Developer | Gatekeeper")
     .requiredOption("--at <at>", "Tick timestamp (ISO 8601)")
     .action(async (options: { actor: string; at: string }) => {
@@ -58,6 +67,7 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
   cmd
     .command("fleet.lifecycle.changed")
     .description("SystemEvent.type=fleet.lifecycle.changed")
+    .summary("--status <status>")
     .requiredOption("--status <status>", "starting | running | stopped | degraded")
     .action(async (options: { status: string }) => {
       if (!isLifecycleStatus(options.status)) {
@@ -69,6 +79,7 @@ export function createTriggerCommand(options: TriggerCommandOptions = {}): Comma
   cmd
     .command("docs.update")
     .description("SystemEvent.type=docs.update")
+    .summary("--paths <path> (repeatable/comma-separated)")
     .requiredOption("--paths <path>", "Updated document path (repeatable/comma-separated)", collectPaths, [])
     .action(async (options: { paths: string[] }) => {
       const paths = options.paths.filter((value) => value.length > 0);
@@ -118,4 +129,16 @@ function collectPaths(value: string, previous: string[] = []): string[] {
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
   return [...previous, ...nextValues];
+}
+
+function formatRegisteredArgs(command: Command): string {
+  if (command.registeredArguments.length === 0) {
+    return "";
+  }
+
+  const args = command.registeredArguments.map((arg) => {
+    const base = arg.variadic ? `${arg.name()}...` : arg.name();
+    return arg.required ? `<${base}>` : `[${base}]`;
+  });
+  return ` ${args.join(" ")}`;
 }

@@ -33,7 +33,11 @@ describe("trigger command", () => {
     await expect(command.parseAsync(["--help"], { from: "user" })).rejects.toBeDefined();
 
     expect(output).toContain("manual.triggered");
+    expect(output).toContain("--actor <actor>");
     expect(output).toContain("docs.update");
+    expect(output).toContain("--paths <path> (repeatable/comma-separated)");
+    expect(output).not.toContain("manual.triggered [options]");
+    expect(output).not.toContain("docs.update [options]");
   });
 
   it("shows docs.update params via subcommand --help", async () => {
