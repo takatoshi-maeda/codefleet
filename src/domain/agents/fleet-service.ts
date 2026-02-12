@@ -12,7 +12,7 @@ import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import { getRoleEventPromptDefinition } from "./agent-role-definitions.js";
 import { renderEventPromptTemplate } from "./event-prompt-template.js";
-import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-startup-prompts.js";
+import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-prompts.js";
 
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
