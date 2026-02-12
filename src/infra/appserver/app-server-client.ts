@@ -23,6 +23,10 @@ export interface StartTurnInput {
   input: Array<{ type: "text"; text: string }>;
 }
 
+export interface StartThreadInput {
+  baseInstructions?: string;
+}
+
 export interface AppServerNotification {
   agentId: string;
   method: string;
@@ -125,12 +129,13 @@ export class AppServerClient {
     };
   }
 
-  async startThread(agentId: string): Promise<{ threadId: string; lastNotificationAt: string }> {
+  async startThread(agentId: string, input: StartThreadInput = {}): Promise<{ threadId: string; lastNotificationAt: string }> {
     const connection = this.requireConnection(agentId);
     // Pin thread execution policy so command/file-change steps run non-interactively in workspace scope.
     const response = await sendRequest(connection, "thread/start", {
       approvalPolicy: AGENT_APPROVAL_POLICY,
       sandbox: AGENT_SANDBOX_MODE,
+      baseInstructions: input.baseInstructions ?? null,
     });
     return {
       threadId: parseThreadId(response, "thread/start"),

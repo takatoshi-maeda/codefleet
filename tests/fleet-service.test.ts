@@ -24,7 +24,7 @@ class FakeProcessManager {
 
 class FakeAppServerClient {
   public started: Array<{ agentId: string; role: AgentRole; prompt: string; detached: boolean }> = [];
-  public startedThreads: Array<{ agentId: string }> = [];
+  public startedThreads: Array<{ agentId: string; baseInstructions?: string }> = [];
   public startedTurns: Array<{ agentId: string; threadId: string; input: Array<{ type: "text"; text: string }> }> = [];
 
   async startAgent(input: {
@@ -49,8 +49,11 @@ class FakeAppServerClient {
     };
   }
 
-  async startThread(agentId: string): Promise<{ threadId: string; lastNotificationAt: string }> {
-    this.startedThreads.push({ agentId });
+  async startThread(
+    agentId: string,
+    input: { baseInstructions?: string } = {},
+  ): Promise<{ threadId: string; lastNotificationAt: string }> {
+    this.startedThreads.push({ agentId, baseInstructions: input.baseInstructions });
     return {
       threadId: `${agentId}-new-thread`,
       lastNotificationAt: "2026-01-01T00:00:02.000Z",
@@ -151,7 +154,7 @@ describe("FleetService", () => {
       appServer as never,
     );
 
-    await service.up();
+    await service.up({ lang: "日本語" });
     await service.dispatchQueuedEvent({
       id: "evt-1",
       createdAt: "2026-01-01T00:00:00.000Z",
@@ -161,7 +164,9 @@ describe("FleetService", () => {
       source: { command: "codefleet trigger docs.update" },
     });
 
-    expect(appServer.startedThreads).toEqual([{ agentId: "gatekeeper-1" }]);
+    expect(appServer.startedThreads).toEqual([
+      { agentId: "gatekeeper-1", baseInstructions: "All responses must be in 日本語." },
+    ]);
     expect(appServer.startedTurns).toHaveLength(1);
     expect(appServer.startedTurns[0]?.agentId).toBe("gatekeeper-1");
     expect(appServer.startedTurns[0]?.threadId).toBe("gatekeeper-1-new-thread");

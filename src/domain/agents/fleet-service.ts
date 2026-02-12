@@ -40,6 +40,7 @@ export interface DispatchAgentEventInput {
 export class FleetService {
   private readonly runtimeRepository: JsonRepository<AgentRuntimeCollection>;
   private readonly sessionRepository: JsonRepository<AppServerSessionCollection>;
+  private threadResponseLanguage?: string;
 
   constructor(
     private readonly rolesPath: string = DEFAULT_ROLES_PATH,
@@ -77,7 +78,9 @@ export class FleetService {
     detached?: boolean;
     gatekeepers?: number;
     developers?: number;
+    lang?: string;
   } = {}): Promise<FleetStatus> {
+    this.threadResponseLanguage = normalizeLanguage(input.lang);
     const targets = buildTargetAgents({
       gatekeepers: input.gatekeepers ?? DEFAULT_GATEKEEPER_COUNT,
       developers: input.developers ?? DEFAULT_DEVELOPER_COUNT,
@@ -240,7 +243,9 @@ export class FleetService {
       lastNotificationAt: new Date().toISOString(),
     });
 
-    const started = await this.appServerClient.startThread(input.agentId);
+    const started = await this.appServerClient.startThread(input.agentId, {
+      baseInstructions: buildThreadLanguageInstruction(this.threadResponseLanguage),
+    });
     const threadId = started.threadId;
     const prompt = await this.buildEventPrompt(input.agentRole, input.event);
     const turn = await this.appServerClient.startTurn(input.agentId, {
@@ -306,6 +311,22 @@ export class FleetService {
     const renderedEventPrompt = renderEventPromptTemplate(eventPromptTemplate, promptContext).trim();
     return `${instructions.trim()}\n\n${renderedEventPrompt}`;
   }
+}
+
+function buildThreadLanguageInstruction(lang: string | undefined): string | undefined {
+  if (!lang) {
+    return undefined;
+  }
+  // This instruction is injected at thread start so all replies in the thread consistently follow the requested language.
+  return `All responses must be in ${lang}.`;
+}
+
+function normalizeLanguage(lang: string | undefined): string | undefined {
+  if (typeof lang !== "string") {
+    return undefined;
+  }
+  const trimmed = lang.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 interface TargetAgent {

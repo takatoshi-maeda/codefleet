@@ -90,4 +90,119 @@ describe("fleet agent event log formatting", () => {
       message: "assistant: line1\nline2",
     });
   });
+
+  it("emits human-readable assistant output from codex/event/agent_message", () => {
+    const record = formatAgentEventHumanLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/agent_message",
+      receivedAt: "2026-02-12T08:11:41.934Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "agent_message",
+          message: "これは最終メッセージです。",
+        },
+      },
+    });
+
+    expect(record).toEqual({
+      ts: "2026-02-12T08:11:41.934Z",
+      level: "info",
+      agentId: "gatekeeper-1",
+      message: "assistant: これは最終メッセージです。",
+    });
+  });
+
+  it("emits human-readable assistant output from codex/event/item_completed payload content", () => {
+    const record = formatAgentEventHumanLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/item_completed",
+      receivedAt: "2026-02-12T08:17:18.746Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "item_completed",
+          item: {
+            type: "AgentMessage",
+            id: "msg-1",
+            content: [{ type: "Text", text: "中間報告です。" }],
+          },
+        },
+      },
+    });
+
+    expect(record).toEqual({
+      ts: "2026-02-12T08:17:18.746Z",
+      level: "info",
+      agentId: "gatekeeper-1",
+      message: "assistant: 中間報告です。",
+    });
+  });
+
+  it("emits human-readable reasoning updates from codex/event/agent_reasoning", () => {
+    const record = formatAgentEventHumanLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/agent_reasoning",
+      receivedAt: "2026-02-12T08:16:41.895Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "agent_reasoning",
+          text: "**Preparing repo inspection commands**",
+        },
+      },
+    });
+
+    expect(record).toEqual({
+      ts: "2026-02-12T08:16:41.895Z",
+      level: "info",
+      agentId: "gatekeeper-1",
+      message: "reasoning: **Preparing repo inspection commands**",
+    });
+  });
+
+  it("emits tool execution start/end logs from codex exec events", () => {
+    const begin = formatAgentEventHumanLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/exec_command_begin",
+      receivedAt: "2026-02-12T08:16:42.046Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "exec_command_begin",
+          command: ["/bin/zsh", "-lc", "pwd && ls -la"],
+          cwd: "/tmp/sandbox/todoapp",
+        },
+      },
+    });
+
+    expect(begin).toEqual({
+      ts: "2026-02-12T08:16:42.046Z",
+      level: "info",
+      agentId: "gatekeeper-1",
+      message: "tool start: /bin/zsh -lc pwd && ls -la (cwd: /tmp/sandbox/todoapp)",
+    });
+
+    const end = formatAgentEventHumanLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/exec_command_end",
+      receivedAt: "2026-02-12T08:16:42.097Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "exec_command_end",
+          command: ["/bin/zsh", "-lc", "pwd && ls -la"],
+          exit_code: 0,
+          stderr: "",
+        },
+      },
+    });
+
+    expect(end).toEqual({
+      ts: "2026-02-12T08:16:42.097Z",
+      level: "info",
+      agentId: "gatekeeper-1",
+      message: "tool end: /bin/zsh -lc pwd && ls -la exit=0",
+    });
+  });
 });

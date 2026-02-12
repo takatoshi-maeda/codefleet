@@ -50,6 +50,83 @@ export function formatAgentEventNotificationLog(notification: AppServerNotificat
 }
 
 export function formatAgentEventHumanLog(notification: AppServerNotification): FleetAgentHumanLogRecord | null {
+  if (notification.method === "codex/event/exec_command_begin") {
+    const msg = asRecord(notification.params?.msg);
+    const command = readStringArray(msg, ["command"]);
+    const cwd = readString(msg, ["cwd"]);
+    if (command.length === 0) {
+      return null;
+    }
+    return {
+      ts: notification.receivedAt,
+      level: "info",
+      agentId: notification.agentId,
+      message: `tool start: ${command.join(" ")}${cwd ? ` (cwd: ${cwd})` : ""}`,
+    };
+  }
+
+  if (notification.method === "codex/event/exec_command_end") {
+    const msg = asRecord(notification.params?.msg);
+    const command = readStringArray(msg, ["command"]);
+    const exitCode = readNumber(msg, ["exit_code"]) ?? readNumber(msg, ["exitCode"]);
+    const stderr = readString(msg, ["stderr"]);
+    const level: FleetAgentHumanLogRecord["level"] = typeof exitCode === "number" && exitCode !== 0 ? "error" : "info";
+    if (command.length === 0) {
+      return null;
+    }
+    return {
+      ts: notification.receivedAt,
+      level,
+      agentId: notification.agentId,
+      message: `tool end: ${command.join(" ")} exit=${exitCode ?? "unknown"}${stderr ? " stderr=present" : ""}`,
+    };
+  }
+
+  if (notification.method === "codex/event/agent_reasoning") {
+    const msg = asRecord(notification.params?.msg);
+    if (typeof msg?.text === "string" && msg.text.length > 0) {
+      return {
+        ts: notification.receivedAt,
+        level: "info",
+        agentId: notification.agentId,
+        message: `reasoning: ${msg.text}`,
+      };
+    }
+    return null;
+  }
+
+  if (notification.method === "codex/event/item_completed") {
+    const msg = asRecord(notification.params?.msg);
+    const item = asRecord(msg?.item);
+    if (item?.type !== "AgentMessage") {
+      return null;
+    }
+
+    const textFromContent = extractAgentMessageTextFromContent(item.content);
+    if (!textFromContent) {
+      return null;
+    }
+    return {
+      ts: notification.receivedAt,
+      level: "info",
+      agentId: notification.agentId,
+      message: `assistant: ${textFromContent}`,
+    };
+  }
+
+  if (notification.method === "codex/event/agent_message") {
+    const msg = asRecord(notification.params?.msg);
+    if (typeof msg?.message === "string" && msg.message.length > 0) {
+      return {
+        ts: notification.receivedAt,
+        level: "info",
+        agentId: notification.agentId,
+        message: `assistant: ${msg.message}`,
+      };
+    }
+    return null;
+  }
+
   if (notification.method === "item/completed") {
     const item = asRecord(notification.params?.item);
     if (item?.type === "agentMessage" && typeof item.text === "string" && item.text.length > 0) {
@@ -269,6 +346,18 @@ function readStringArray(value: unknown, path: string[]): string[] {
   return current.filter((item): item is string => typeof item === "string");
 }
 
+function readNumber(value: unknown, path: string[]): number | undefined {
+  let current: unknown = value;
+  for (const segment of path) {
+    const record = asRecord(current);
+    if (!record) {
+      return undefined;
+    }
+    current = record[segment];
+  }
+  return typeof current === "number" ? current : undefined;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return undefined;
@@ -281,4 +370,28 @@ function truncateText(value: string): string {
     return value;
   }
   return `${value.slice(0, MAX_LOG_STRING_LENGTH)}... [truncated ${value.length - MAX_LOG_STRING_LENGTH} chars]`;
+}
+
+function extractAgentMessageTextFromContent(content: unknown): string | null {
+  if (!Array.isArray(content) || content.length === 0) {
+    return null;
+  }
+
+  const parts: string[] = [];
+  for (const item of content) {
+    if (typeof item === "string") {
+      parts.push(item);
+      continue;
+    }
+    const record = asRecord(item);
+    if (!record) {
+      continue;
+    }
+    const text = record.text;
+    if (typeof text === "string" && text.length > 0) {
+      parts.push(text);
+    }
+  }
+  const merged = parts.join("\n").trim();
+  return merged.length > 0 ? merged : null;
 }

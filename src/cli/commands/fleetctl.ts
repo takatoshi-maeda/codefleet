@@ -33,6 +33,7 @@ const ROLE_COLOR_BY_PREFIX: Record<string, string> = {
 export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Command {
   let logMode: LogMode = "human";
   const emit = (record: object): void => emitLog(record, logMode);
+  const lastAssistantMessageByAgent = new Map<string, string>();
   const suppressedEventCountByAgent = new Map<string, number>();
   const appServerClient = new AppServerClient({
     onNotification: (notification) => {
@@ -58,6 +59,13 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
 
       const humanLog = formatAgentEventHumanLog(notification);
       if (humanLog) {
+        if (humanLog.message.startsWith("assistant: ")) {
+          const previous = lastAssistantMessageByAgent.get(humanLog.agentId);
+          if (previous === humanLog.message) {
+            return;
+          }
+          lastAssistantMessageByAgent.set(humanLog.agentId, humanLog.message);
+        }
         emit({
           ts: humanLog.ts,
           level: humanLog.level,
@@ -88,6 +96,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .description("Start agents")
     .option("-d, --detached", "Run in background")
     .option("--verbose", "Emit verbose JSONL logs for diagnostics")
+    .option("--lang <lang>", "Set response language for newly started event threads")
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
     .action(async (options) => {
@@ -95,12 +104,14 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
       const developers = Number(options.developers);
+      const lang = typeof options.lang === "string" ? options.lang : undefined;
 
       if (Boolean(options.detached)) {
         const detachedPid = await spawnDetachedSupervisorProcess({
           gatekeepers,
           developers,
           verbose: Boolean(options.verbose),
+          lang,
         });
         emit({
           ts: requestedAt,
@@ -128,7 +139,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         },
       });
 
-      const status = await service.up({ detached: false, gatekeepers, developers });
+      const status = await service.up({ detached: false, gatekeepers, developers, lang });
       for (const agent of status.agents) {
         emitAgentRuntimeLog(agent, emit);
       }
@@ -384,6 +395,7 @@ async function spawnDetachedSupervisorProcess(input: {
   gatekeepers: number;
   developers: number;
   verbose: boolean;
+  lang?: string;
 }): Promise<number | null> {
   const args = [
     process.argv[1],
@@ -395,6 +407,9 @@ async function spawnDetachedSupervisorProcess(input: {
   ];
   if (input.verbose) {
     args.push("--verbose");
+  }
+  if (input.lang) {
+    args.push("--lang", input.lang);
   }
   const child = spawn(process.execPath, args, {
     detached: true,
