@@ -3,12 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodefleetError } from "../../shared/errors.js";
 import type { AgentRole } from "../roles-model.js";
-
-const PROMPT_FILE_BY_ROLE: Record<AgentRole, string> = {
-  Orchestrator: "orchestrator-startup.md",
-  Gatekeeper: "gatekeeper-startup.md",
-  Developer: "developer-startup.md",
-};
+import { getAgentRoleDefinition } from "./agent-role-definitions.js";
 
 const promptCache = new Map<AgentRole, string>();
 
@@ -18,7 +13,8 @@ export async function getRoleStartupPrompt(role: AgentRole): Promise<string> {
     return cached;
   }
 
-  const promptPath = path.join(resolveProjectRoot(), "src/prompts", PROMPT_FILE_BY_ROLE[role]);
+  const promptFile = getAgentRoleDefinition(role).startupPromptFile;
+  const promptPath = path.join(resolveProjectRoot(), "src/prompts", promptFile);
   try {
     const prompt = await fs.readFile(promptPath, "utf8");
     promptCache.set(role, prompt);

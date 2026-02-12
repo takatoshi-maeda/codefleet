@@ -6,7 +6,7 @@ import { AgentEventQueueService } from "../src/domain/events/agent-event-queue-s
 import type { AgentRuntimeCollection } from "../src/domain/agent-runtime-model.js";
 
 describe("AgentEventQueueService", () => {
-  it("enqueues docs.update messages only for running agents", async () => {
+  it("enqueues docs.update messages only for running subscribed roles", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
     const runtimeDir = path.join(tempDir, ".codefleet", "runtime");
     await fs.mkdir(runtimeDir, { recursive: true });
@@ -36,8 +36,8 @@ describe("AgentEventQueueService", () => {
         {
           id: "gatekeeper-1",
           role: "Gatekeeper",
-          status: "stopped",
-          pid: null,
+          status: "running",
+          pid: 333,
           cwd: tempDir,
           startedAt: "2026-01-01T00:00:00.000Z",
           lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
@@ -50,13 +50,13 @@ describe("AgentEventQueueService", () => {
     const service = new AgentEventQueueService(runtimeDir);
     const result = await service.enqueueToRunningAgents({ type: "docs.update", paths: ["docs/spec.md"] });
 
-    expect(result.enqueuedAgentIds).toEqual(["developer-1", "orchestrator-1"]);
-    expect(result.files).toHaveLength(2);
+    expect(result.enqueuedAgentIds).toEqual(["gatekeeper-1"]);
+    expect(result.files).toHaveLength(1);
 
     const messageFiles = await Promise.all(result.files.map((filePath) => fs.readFile(filePath, "utf8")));
     const messages = messageFiles.map((raw) => JSON.parse(raw) as { agentId: string; event: { type: string; paths: string[] } });
 
-    expect(messages.map((message) => message.agentId).sort()).toEqual(["developer-1", "orchestrator-1"]);
+    expect(messages.map((message) => message.agentId).sort()).toEqual(["gatekeeper-1"]);
     expect(messages.every((message) => message.event.type === "docs.update")).toBe(true);
     expect(messages.every((message) => message.event.paths[0] === "docs/spec.md")).toBe(true);
   });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { atomicWriteJson } from "../../infra/fs/atomic-write.js";
 import type { SystemEvent } from "../../events/router.js";
 import type { AgentRuntimeCollection } from "../agent-runtime-model.js";
+import { isRoleSubscribedToEvent } from "../agents/agent-role-definitions.js";
 
 const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
 const AGENTS_FILE = "agents.json";
@@ -30,7 +31,7 @@ export class AgentEventQueueService {
   async enqueueToRunningAgents(event: SystemEvent): Promise<AgentEventQueueEnqueueResult> {
     const runtimes = await this.readRuntime();
     const runningAgentIds = runtimes.agents
-      .filter((agent) => agent.status === "running")
+      .filter((agent) => agent.status === "running" && isRoleSubscribedToEvent(agent.role, event))
       .map((agent) => agent.id)
       .sort();
 
