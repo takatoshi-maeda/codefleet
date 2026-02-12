@@ -9,6 +9,7 @@ import { FleetService } from "../../domain/agents/fleet-service.js";
 import { AgentEventQueueWorkerService } from "../../domain/events/agent-event-queue-worker-service.js";
 import { AppServerClient } from "../../infra/appserver/app-server-client.js";
 import {
+  formatAgentEventHumanLog,
   formatAgentEventNotificationLog,
   shouldSuppressNotificationMethod,
 } from "../logging/fleet-agent-event-log.js";
@@ -20,27 +21,51 @@ interface FleetctlCommandOptions {
 const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
+type LogMode = "human" | "jsonl";
+const ANSI_RESET = "\u001b[0m";
+const ANSI_BOLD = "\u001b[1m";
+const ROLE_COLOR_BY_PREFIX: Record<string, string> = {
+  orchestrator: "\u001b[36m",
+  gatekeeper: "\u001b[33m",
+  developer: "\u001b[32m",
+};
 
 export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Command {
+  let logMode: LogMode = "human";
+  const emit = (record: object): void => emitLog(record, logMode);
   const suppressedEventCountByAgent = new Map<string, number>();
   const appServerClient = new AppServerClient({
     onNotification: (notification) => {
-      if (shouldSuppressNotificationMethod(notification.method)) {
-        suppressedEventCountByAgent.set(
-          notification.agentId,
-          (suppressedEventCountByAgent.get(notification.agentId) ?? 0) + 1,
-        );
+      if (logMode === "jsonl") {
+        if (shouldSuppressNotificationMethod(notification.method)) {
+          suppressedEventCountByAgent.set(
+            notification.agentId,
+            (suppressedEventCountByAgent.get(notification.agentId) ?? 0) + 1,
+          );
+          return;
+        }
+
+        const logRecord = formatAgentEventNotificationLog(notification);
+        const suppressedCount = suppressedEventCountByAgent.get(notification.agentId) ?? 0;
+        if (suppressedCount > 0) {
+          // Keep high-volume stream events out of the main log while preserving observability.
+          logRecord.suppressedEventsSinceLast = suppressedCount;
+          suppressedEventCountByAgent.set(notification.agentId, 0);
+        }
+        emit(logRecord);
         return;
       }
 
-      const logRecord = formatAgentEventNotificationLog(notification);
-      const suppressedCount = suppressedEventCountByAgent.get(notification.agentId) ?? 0;
-      if (suppressedCount > 0) {
-        // Keep high-volume stream events out of the main log while preserving observability.
-        logRecord.suppressedEventsSinceLast = suppressedCount;
-        suppressedEventCountByAgent.set(notification.agentId, 0);
+      const humanLog = formatAgentEventHumanLog(notification);
+      if (humanLog) {
+        emit({
+          ts: humanLog.ts,
+          level: humanLog.level,
+          event: "fleet.agent.output",
+          agentId: humanLog.agentId,
+          message: humanLog.message,
+        });
       }
-      emitJsonl(logRecord);
     },
   });
   const service = new FleetService(undefined, undefined, undefined, undefined, appServerClient);
@@ -62,16 +87,22 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .command("up")
     .description("Start agents")
     .option("-d, --detached", "Run in background")
+    .option("--verbose", "Emit verbose JSONL logs for diagnostics")
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
     .action(async (options) => {
+      logMode = Boolean(options.verbose) ? "jsonl" : "human";
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
       const developers = Number(options.developers);
 
       if (Boolean(options.detached)) {
-        const detachedPid = await spawnDetachedSupervisorProcess({ gatekeepers, developers });
-        emitJsonl({
+        const detachedPid = await spawnDetachedSupervisorProcess({
+          gatekeepers,
+          developers,
+          verbose: Boolean(options.verbose),
+        });
+        emit({
           ts: requestedAt,
           level: "info",
           event: "fleet.supervisor.detached",
@@ -85,7 +116,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         return;
       }
 
-      emitJsonl({
+      emit({
         ts: requestedAt,
         level: "info",
         event: "fleet.up.requested",
@@ -99,14 +130,14 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
 
       const status = await service.up({ detached: false, gatekeepers, developers });
       for (const agent of status.agents) {
-        emitAgentRuntimeLog(agent);
+        emitAgentRuntimeLog(agent, emit);
       }
 
       for (const session of status.sessions) {
-        emitSessionLog(session);
+        emitSessionLog(session, emit);
       }
 
-      emitJsonl({
+      emit({
         ts: new Date().toISOString(),
         level: "info",
         event: "fleet.up.completed",
@@ -118,7 +149,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       const queueWorker = new AgentEventQueueWorkerService();
       await writeSupervisorPid(process.pid);
       try {
-        await waitForShutdownSignal(service, queueWorker);
+        await waitForShutdownSignal(service, queueWorker, emit);
       } finally {
         await removeSupervisorPidFile();
       }
@@ -186,8 +217,8 @@ function validateTargetSelection(all: boolean, role: AgentRole | undefined, comm
   }
 }
 
-function emitAgentRuntimeLog(agent: AgentRuntime): void {
-  emitJsonl({
+function emitAgentRuntimeLog(agent: AgentRuntime, emit: (record: object) => void): void {
+  emit({
     ts: new Date().toISOString(),
     level: agent.status === "failed" ? "error" : "info",
     event: "fleet.agent.state",
@@ -202,8 +233,8 @@ function emitAgentRuntimeLog(agent: AgentRuntime): void {
   });
 }
 
-function emitSessionLog(session: AppServerSession): void {
-  emitJsonl({
+function emitSessionLog(session: AppServerSession, emit: (record: object) => void): void {
+  emit({
     ts: new Date().toISOString(),
     level: session.status === "error" ? "error" : "info",
     event: "fleet.session.state",
@@ -217,13 +248,18 @@ function emitSessionLog(session: AppServerSession): void {
   });
 }
 
-function emitJsonl(record: object): void {
-  console.log(JSON.stringify(record));
+function emitLog(record: object, mode: LogMode): void {
+  if (mode === "jsonl") {
+    console.log(JSON.stringify(record));
+    return;
+  }
+  console.log(formatHumanLog(record));
 }
 
 async function waitForShutdownSignal(
   service: FleetService,
   queueWorker: Pick<AgentEventQueueWorkerService, "consume">,
+  emit: (record: object) => void,
 ): Promise<void> {
   let polling = true;
   let consuming = false;
@@ -246,7 +282,7 @@ async function waitForShutdownSignal(
           { onMessage: async (message) => service.dispatchQueuedEvent(message) },
         );
         if (result.consumed > 0) {
-          emitJsonl({
+          emit({
             ts: new Date().toISOString(),
             level: result.failedFiles.length > 0 ? "warn" : "info",
             event: "fleet.queue.consumed",
@@ -259,7 +295,7 @@ async function waitForShutdownSignal(
         }
       }
     } catch (error) {
-      emitJsonl({
+      emit({
         ts: new Date().toISOString(),
         level: "error",
         event: "fleet.queue.consume_failed",
@@ -289,7 +325,7 @@ async function waitForShutdownSignal(
 
     const onSignal = (signal: NodeJS.Signals): void => {
       if (shuttingDown) {
-        emitJsonl({
+        emit({
           ts: new Date().toISOString(),
           level: "warn",
           event: "fleet.down.force_exit",
@@ -300,7 +336,7 @@ async function waitForShutdownSignal(
 
       shuttingDown = true;
       void (async () => {
-        emitJsonl({
+        emit({
           ts: new Date().toISOString(),
           level: "info",
           event: "fleet.down.requested",
@@ -311,12 +347,12 @@ async function waitForShutdownSignal(
         try {
           const status = await service.down({ all: true });
           for (const agent of status.agents) {
-            emitAgentRuntimeLog(agent);
+            emitAgentRuntimeLog(agent, emit);
           }
           for (const session of status.sessions) {
-            emitSessionLog(session);
+            emitSessionLog(session, emit);
           }
-          emitJsonl({
+          emit({
             ts: new Date().toISOString(),
             level: "info",
             event: "fleet.down.completed",
@@ -325,7 +361,7 @@ async function waitForShutdownSignal(
           });
         } catch (error) {
           process.exitCode = 1;
-          emitJsonl({
+          emit({
             ts: new Date().toISOString(),
             level: "error",
             event: "fleet.down.failed",
@@ -344,7 +380,11 @@ async function waitForShutdownSignal(
   });
 }
 
-async function spawnDetachedSupervisorProcess(input: { gatekeepers: number; developers: number }): Promise<number | null> {
+async function spawnDetachedSupervisorProcess(input: {
+  gatekeepers: number;
+  developers: number;
+  verbose: boolean;
+}): Promise<number | null> {
   const args = [
     process.argv[1],
     "up",
@@ -353,6 +393,9 @@ async function spawnDetachedSupervisorProcess(input: { gatekeepers: number; deve
     "--developers",
     String(input.developers),
   ];
+  if (input.verbose) {
+    args.push("--verbose");
+  }
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: "ignore",
@@ -408,4 +451,104 @@ async function waitForProcessExit(pid: number, timeoutMs: number): Promise<void>
     }
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
+}
+
+function formatHumanLog(record: object): string {
+  const payload = asRecord(record);
+  if (!payload) {
+    return String(record);
+  }
+
+  const ts = typeof payload.ts === "string" ? payload.ts : new Date().toISOString();
+  const level = typeof payload.level === "string" ? payload.level.toUpperCase() : "INFO";
+  const agentId = typeof payload.agentId === "string" ? payload.agentId : null;
+  const event = typeof payload.event === "string" ? payload.event : "event";
+  const message = humanMessageForEvent(event, payload);
+  if (agentId) {
+    return `[${ts}] ${formatAgentLabel(agentId)} ${level} ${message}`;
+  }
+  return `[${ts}] ${level} ${message}`;
+}
+
+function humanMessageForEvent(event: string, payload: Record<string, unknown>): string {
+  if (event === "fleet.agent.output") {
+    const message = typeof payload.message === "string" ? payload.message : "";
+    return message;
+  }
+
+  if (event === "fleet.agent.state") {
+    const role = typeof payload.role === "string" ? payload.role : "UnknownRole";
+    const status = typeof payload.status === "string" ? payload.status : "unknown";
+    const pid = typeof payload.pid === "number" ? String(payload.pid) : "-";
+    return `(${role}) status=${status} pid=${pid}`;
+  }
+
+  if (event === "fleet.session.state") {
+    const status = typeof payload.status === "string" ? payload.status : "unknown";
+    return `session status=${status}`;
+  }
+
+  if (event === "fleet.up.requested") {
+    const detached = payload.detached === true ? "true" : "false";
+    return `fleet start requested detached=${detached}`;
+  }
+
+  if (event === "fleet.up.completed") {
+    const summary = typeof payload.summary === "string" ? payload.summary : "unknown";
+    const agentCount = typeof payload.agentCount === "number" ? payload.agentCount : 0;
+    const readySessions = typeof payload.readySessionCount === "number" ? payload.readySessionCount : 0;
+    return `fleet started summary=${summary} agents=${agentCount} readySessions=${readySessions}`;
+  }
+
+  if (event === "fleet.queue.consumed") {
+    const agentId = typeof payload.agentId === "string" ? payload.agentId : "unknown-agent";
+    const consumed = typeof payload.consumed === "number" ? payload.consumed : 0;
+    const failedCount = typeof payload.failedCount === "number" ? payload.failedCount : 0;
+    return `queue consumed agent=${agentId} consumed=${consumed} failed=${failedCount}`;
+  }
+
+  if (event === "fleet.down.requested") {
+    const signal = typeof payload.signal === "string" ? payload.signal : "unknown";
+    return `shutdown requested by ${signal}`;
+  }
+
+  if (event === "fleet.down.completed") {
+    const summary = typeof payload.summary === "string" ? payload.summary : "unknown";
+    const agentCount = typeof payload.agentCount === "number" ? payload.agentCount : 0;
+    return `fleet stopped summary=${summary} agents=${agentCount}`;
+  }
+
+  if (event === "fleet.down.failed") {
+    const message = typeof payload.message === "string" ? payload.message : "unknown error";
+    return `fleet shutdown failed: ${message}`;
+  }
+
+  const compact = Object.entries(payload)
+    .filter(([key]) => key !== "ts" && key !== "level" && key !== "event")
+    .map(([key, value]) => `${key}=${formatLogValue(value)}`)
+    .join(" ");
+  return compact.length > 0 ? `${event} ${compact}` : event;
+}
+
+function formatLogValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.replace(/\s+/g, " ").trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function formatAgentLabel(agentId: string): string {
+  const rolePrefix = agentId.split("-", 1)[0] ?? "";
+  const color = ROLE_COLOR_BY_PREFIX[rolePrefix] ?? "\u001b[90m";
+  return `${color}${ANSI_BOLD}(${agentId})${ANSI_RESET}`;
 }

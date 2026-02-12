@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAgentEventHumanLog,
   formatAgentEventNotificationLog,
   shouldSuppressNotificationMethod,
 } from "../src/cli/logging/fleet-agent-event-log.js";
@@ -57,6 +58,36 @@ describe("fleet agent event log formatting", () => {
         id: "019c50b9-b581-72c3-8cdc-1a171e860020",
         preview: expect.stringContaining("[truncated "),
       },
+    });
+  });
+
+  it("emits human-readable assistant output only when the part is completed", () => {
+    const deltaLog = formatAgentEventHumanLog({
+      agentId: "developer-1",
+      method: "item/agentMessage/delta",
+      receivedAt: "2026-02-12T07:21:44.084Z",
+      params: { delta: "hello" },
+    });
+    expect(deltaLog).toBeNull();
+
+    const completedLog = formatAgentEventHumanLog({
+      agentId: "developer-1",
+      method: "item/completed",
+      receivedAt: "2026-02-12T07:21:50.124Z",
+      params: {
+        item: {
+          type: "agentMessage",
+          id: "msg-1",
+          text: "line1\nline2",
+        },
+      },
+    });
+
+    expect(completedLog).toEqual({
+      ts: "2026-02-12T07:21:50.124Z",
+      level: "info",
+      agentId: "developer-1",
+      message: "assistant: line1\nline2",
     });
   });
 });

@@ -25,6 +25,13 @@ export interface FleetAgentEventLogRecord {
   suppressedEventsSinceLast?: number;
 }
 
+export interface FleetAgentHumanLogRecord {
+  ts: string;
+  level: "info" | "warn" | "error";
+  agentId: string;
+  message: string;
+}
+
 export function shouldSuppressNotificationMethod(method: string): boolean {
   return SUPPRESSED_NOTIFICATION_METHODS.has(method);
 }
@@ -40,6 +47,70 @@ export function formatAgentEventNotificationLog(notification: AppServerNotificat
     summary: buildSummary(notification.method, params),
     params,
   };
+}
+
+export function formatAgentEventHumanLog(notification: AppServerNotification): FleetAgentHumanLogRecord | null {
+  if (notification.method === "item/completed") {
+    const item = asRecord(notification.params?.item);
+    if (item?.type === "agentMessage" && typeof item.text === "string" && item.text.length > 0) {
+      return {
+        ts: notification.receivedAt,
+        level: "info",
+        agentId: notification.agentId,
+        // Emit only completed parts so logs stay readable and avoid token-by-token deltas.
+        message: `assistant: ${item.text}`,
+      };
+    }
+    return null;
+  }
+
+  if (notification.method === "codex/event/exec_approval_request") {
+    const params = summarizeNotificationParams(notification.method, notification.params);
+    const command = readStringArray(params, ["command"]);
+    return {
+      ts: notification.receivedAt,
+      level: "warn",
+      agentId: notification.agentId,
+      message: command.length > 0 ? `approval requested: ${command.join(" ")}` : "approval requested",
+    };
+  }
+
+  if (notification.method === "thread/started") {
+    const params = summarizeNotificationParams(notification.method, notification.params);
+    const threadId = readString(params, ["thread", "id"]);
+    return {
+      ts: notification.receivedAt,
+      level: "info",
+      agentId: notification.agentId,
+      message: threadId ? `thread started: ${threadId}` : "thread started",
+    };
+  }
+
+  if (notification.method === "turn/started") {
+    const params = summarizeNotificationParams(notification.method, notification.params);
+    const threadId = readString(params, ["threadId"]);
+    const turnId = readString(params, ["turn", "id"]);
+    return {
+      ts: notification.receivedAt,
+      level: "info",
+      agentId: notification.agentId,
+      message: threadId && turnId ? `turn started: ${threadId}/${turnId}` : "turn started",
+    };
+  }
+
+  if (notification.method === "turn/completed") {
+    const params = summarizeNotificationParams(notification.method, notification.params);
+    const threadId = readString(params, ["threadId"]);
+    const turnId = readString(params, ["turn", "id"]);
+    return {
+      ts: notification.receivedAt,
+      level: "info",
+      agentId: notification.agentId,
+      message: threadId && turnId ? `turn completed: ${threadId}/${turnId}` : "turn completed",
+    };
+  }
+
+  return null;
 }
 
 function summarizeNotificationParams(method: string, params: Record<string, unknown> | undefined): unknown {
