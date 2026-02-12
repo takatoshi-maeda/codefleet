@@ -215,7 +215,10 @@ async function waitForShutdownSignal(
         .map((agent) => agent.id)
         .sort();
       for (const agentId of runningAgentIds) {
-        const result = await queueWorker.consume({ agentId, maxMessages: DEFAULT_QUEUE_CONSUME_MAX });
+        const result = await queueWorker.consume(
+          { agentId, maxMessages: DEFAULT_QUEUE_CONSUME_MAX },
+          { onMessage: async (message) => service.dispatchQueuedEvent(message) },
+        );
         if (result.consumed > 0) {
           emitJsonl({
             ts: new Date().toISOString(),

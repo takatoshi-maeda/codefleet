@@ -24,6 +24,8 @@ class FakeProcessManager {
 
 class FakeAppServerClient {
   public started: Array<{ agentId: string; role: AgentRole; prompt: string; detached: boolean }> = [];
+  public startedThreads: Array<{ agentId: string }> = [];
+  public startedTurns: Array<{ agentId: string; threadId: string; input: string }> = [];
 
   async startAgent(input: {
     agentId: string;
@@ -44,6 +46,22 @@ class FakeAppServerClient {
       threadId: `${agentId}-thread`,
       activeTurnId: `${agentId}-turn`,
       lastNotificationAt: "2026-01-01T00:00:01.000Z",
+    };
+  }
+
+  async startThread(agentId: string): Promise<{ threadId: string; lastNotificationAt: string }> {
+    this.startedThreads.push({ agentId });
+    return {
+      threadId: `${agentId}-new-thread`,
+      lastNotificationAt: "2026-01-01T00:00:02.000Z",
+    };
+  }
+
+  async startTurn(inputAgentId: string, input: { threadId: string; input: string }): Promise<{ turnId: string; lastNotificationAt: string }> {
+    this.startedTurns.push({ agentId: inputAgentId, threadId: input.threadId, input: input.input });
+    return {
+      turnId: `${inputAgentId}-event-turn`,
+      lastNotificationAt: "2026-01-01T00:00:04.000Z",
     };
   }
 }
@@ -114,5 +132,41 @@ describe("FleetService", () => {
     expect(logs).not.toContain("line1");
     expect(logs).toContain("line2");
     expect(logs).toContain("line3");
+  });
+
+  it("starts a new thread for gatekeeper docs.update and uses event prompt", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up();
+    await service.dispatchQueuedEvent({
+      id: "evt-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      agentId: "gatekeeper-1",
+      event: { type: "docs.update", paths: ["docs/spec.md"] },
+      delivery: { promptFile: "gatekeeper/docs.event.md" },
+      source: { command: "codefleet trigger docs.update" },
+    });
+
+    expect(appServer.startedThreads).toEqual([{ agentId: "gatekeeper-1" }]);
+    expect(appServer.startedTurns).toHaveLength(1);
+    expect(appServer.startedTurns[0]?.agentId).toBe("gatekeeper-1");
+    expect(appServer.startedTurns[0]?.threadId).toBe("gatekeeper-1-new-thread");
+    expect(appServer.startedTurns[0]?.input).toContain("You are the Gatekeeper processing a `docs.update` event.");
+    expect(appServer.startedTurns[0]?.input).toContain("paths: docs/spec.md");
+
+    const status = await service.status("Gatekeeper");
+    expect(status.sessions[0]?.threadId).toBe("gatekeeper-1-new-thread");
+    expect(status.sessions[0]?.activeTurnId).toBe("gatekeeper-1-event-turn");
   });
 });

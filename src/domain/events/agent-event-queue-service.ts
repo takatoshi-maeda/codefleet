@@ -4,7 +4,8 @@ import { atomicWriteJson } from "../../infra/fs/atomic-write.js";
 import type { SystemEvent } from "../../events/router.js";
 import { createUlid } from "../../shared/ulid.js";
 import type { AgentRuntimeCollection } from "../agent-runtime-model.js";
-import { isRoleSubscribedToEvent } from "../agents/agent-role-definitions.js";
+import { getRoleEventDelivery, isRoleSubscribedToEvent } from "../agents/agent-role-definitions.js";
+import type { AgentEventQueueMessage } from "./agent-event-queue-message-model.js";
 
 const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
 const AGENTS_FILE = "agents.json";
@@ -15,44 +16,34 @@ export interface AgentEventQueueEnqueueResult {
   files: string[];
 }
 
-interface AgentEventQueueMessage {
-  id: string;
-  createdAt: string;
-  agentId: string;
-  event: SystemEvent;
-  source: {
-    command: string;
-  };
-}
-
 export class AgentEventQueueService {
   constructor(private readonly runtimeDir: string = DEFAULT_RUNTIME_DIR) {}
 
   async enqueueToRunningAgents(event: SystemEvent): Promise<AgentEventQueueEnqueueResult> {
     const runtimes = await this.readRuntime();
-    const runningAgentIds = runtimes.agents
+    const runningAgents = runtimes.agents
       .filter((agent) => agent.status === "running" && isRoleSubscribedToEvent(agent.role, event))
-      .map((agent) => agent.id)
-      .sort();
+      .sort((left, right) => left.id.localeCompare(right.id));
 
     const createdAt = new Date().toISOString();
     const files: string[] = [];
 
     // A per-agent spool keeps consumption independent and removes cross-agent lock contention.
-    for (const agentId of runningAgentIds) {
+    for (const agent of runningAgents) {
       const messageId = createUlid();
       const queueFilePath = path.join(
         this.runtimeDir,
         EVENT_QUEUE_ROOT,
-        agentId,
+        agent.id,
         "pending",
         `${messageId}.json`,
       );
       const message: AgentEventQueueMessage = {
         id: messageId,
         createdAt,
-        agentId,
+        agentId: agent.id,
         event,
+        delivery: getRoleEventDelivery(agent.role, event),
         source: {
           command: "codefleet trigger docs.update",
         },
@@ -62,7 +53,7 @@ export class AgentEventQueueService {
     }
 
     return {
-      enqueuedAgentIds: runningAgentIds,
+      enqueuedAgentIds: runningAgents.map((agent) => agent.id),
       files,
     };
   }

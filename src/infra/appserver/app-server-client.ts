@@ -18,6 +18,11 @@ export interface StartAgentResult {
   startedAt: string;
 }
 
+export interface StartTurnInput {
+  threadId: string;
+  input: string;
+}
+
 interface PendingResponse {
   resolve: (message: RpcResponseMessage) => void;
   reject: (error: Error) => void;
@@ -86,10 +91,7 @@ export class AppServerClient {
   }
 
   async handshake(agentId: string): Promise<Pick<AppServerSession, "threadId" | "activeTurnId" | "lastNotificationAt">> {
-    const connection = this.connections.get(agentId);
-    if (!connection) {
-      throw new CodefleetError("ERR_NOT_FOUND", `app-server process is not started for ${agentId}`);
-    }
+    const connection = this.requireConnection(agentId);
 
     await sendRequest(connection, "initialize", {
       clientInfo: {
@@ -105,6 +107,44 @@ export class AppServerClient {
       activeTurnId: null,
       lastNotificationAt: connection.lastNotificationAt,
     };
+  }
+
+  async startThread(agentId: string): Promise<{ threadId: string; lastNotificationAt: string }> {
+    const connection = this.requireConnection(agentId);
+    const response = await sendRequest(connection, "thread/start", {});
+    return {
+      threadId: parseThreadId(response, "thread/start"),
+      lastNotificationAt: connection.lastNotificationAt,
+    };
+  }
+
+  async resumeThread(agentId: string, threadId: string): Promise<{ threadId: string; lastNotificationAt: string }> {
+    const connection = this.requireConnection(agentId);
+    const response = await sendRequest(connection, "thread/resume", { threadId });
+    return {
+      threadId: parseThreadId(response, "thread/resume"),
+      lastNotificationAt: connection.lastNotificationAt,
+    };
+  }
+
+  async startTurn(agentId: string, input: StartTurnInput): Promise<{ turnId: string | null; lastNotificationAt: string }> {
+    const connection = this.requireConnection(agentId);
+    const response = await sendRequest(connection, "turn/start", {
+      threadId: input.threadId,
+      input: input.input,
+    });
+    return {
+      turnId: parseTurnId(response),
+      lastNotificationAt: connection.lastNotificationAt,
+    };
+  }
+
+  private requireConnection(agentId: string): AppServerConnection {
+    const connection = this.connections.get(agentId);
+    if (!connection) {
+      throw new CodefleetError("ERR_NOT_FOUND", `app-server process is not started for ${agentId}`);
+    }
+    return connection;
   }
 }
 
@@ -203,4 +243,18 @@ function parseRpcLine(line: string): RpcResponseMessage | RpcNotificationMessage
   } catch {
     return null;
   }
+}
+
+function parseThreadId(response: RpcResponseMessage, method: string): string {
+  const thread = response.result?.thread as { id?: unknown } | undefined;
+  if (typeof thread?.id === "string" && thread.id.length > 0) {
+    return thread.id;
+  }
+
+  throw new CodefleetError("ERR_UNEXPECTED", `app-server request returned no thread id: ${method}`);
+}
+
+function parseTurnId(response: RpcResponseMessage): string | null {
+  const turn = response.result?.turn as { id?: unknown } | undefined;
+  return typeof turn?.id === "string" && turn.id.length > 0 ? turn.id : null;
 }

@@ -4,10 +4,13 @@ import { AppServerClient } from "../../infra/appserver/app-server-client.js";
 import { JsonRepository } from "../../infra/fs/json-repository.js";
 import { FleetProcessManager } from "../../infra/process/fleet-process-manager.js";
 import { CodefleetError } from "../../shared/errors.js";
+import type { SystemEvent } from "../../events/router.js";
 import type { AgentRuntime, AgentRuntimeCollection } from "../agent-runtime-model.js";
 import type { AppServerSession, AppServerSessionCollection } from "../app-server-session-model.js";
+import type { AgentEventDelivery, AgentEventQueueMessage } from "../events/agent-event-queue-message-model.js";
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
+import { loadEventPrompt } from "./event-prompt-loader.js";
 import { getRoleStartupPrompt } from "./role-startup-prompts.js";
 
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
@@ -26,6 +29,12 @@ export interface FleetStatus {
 interface TargetInput {
   all?: boolean;
   role?: AgentRole;
+}
+
+export interface DispatchAgentEventInput {
+  agentId: string;
+  event: SystemEvent;
+  delivery: AgentEventDelivery;
 }
 
 export class FleetService {
@@ -212,6 +221,40 @@ export class FleetService {
     return lines.join("\n");
   }
 
+  async dispatchQueuedEvent(message: AgentEventQueueMessage): Promise<void> {
+    await this.dispatchAgentEvent({
+      agentId: message.agentId,
+      event: message.event,
+      delivery: message.delivery,
+    });
+  }
+
+  async dispatchAgentEvent(input: DispatchAgentEventInput): Promise<void> {
+    const sessions = await this.getOrInitializeSessions();
+    const session = upsertSession(sessions, {
+      agentId: input.agentId,
+      status: "ready",
+      initialized: true,
+      threadId: null,
+      activeTurnId: null,
+      lastNotificationAt: new Date().toISOString(),
+    });
+
+    const started = await this.appServerClient.startThread(input.agentId);
+    const threadId = started.threadId;
+    const prompt = await this.buildEventPrompt(input.event, input.delivery.promptFile);
+    const turn = await this.appServerClient.startTurn(input.agentId, { threadId, input: prompt });
+
+    session.status = "ready";
+    session.initialized = true;
+    session.threadId = threadId;
+    session.activeTurnId = turn.turnId;
+    session.lastNotificationAt = turn.lastNotificationAt;
+    session.lastError = undefined;
+    sessions.updatedAt = new Date().toISOString();
+    await this.sessionRepository.save(sessions);
+  }
+
   private async getOrInitializeRuntime(): Promise<AgentRuntimeCollection> {
     try {
       return await this.runtimeRepository.get();
@@ -242,6 +285,18 @@ export class FleetService {
 
       throw error;
     }
+  }
+
+  private async buildEventPrompt(event: SystemEvent, promptFile?: string): Promise<string> {
+    const lines = [`event: ${event.type}`, `paths: ${event.paths.join(", ")}`];
+    if (!promptFile) {
+      return lines.join("\n");
+    }
+
+    const eventPrompt = await loadEventPrompt(promptFile);
+    // Event payload is appended in a stable text format so prompt templates can
+    // reference dynamic context without needing per-event parser logic.
+    return `${eventPrompt.trim()}\n\n${lines.join("\n")}`;
   }
 }
 
