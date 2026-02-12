@@ -22,7 +22,7 @@ afterEach(async () => {
 });
 
 describe("watchers", () => {
-  it("emits git.main.updated when main ref changes", async () => {
+  it("emits docs.update when main ref changes", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-git-watch-"));
     await fs.mkdir(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
 
@@ -35,10 +35,14 @@ describe("watchers", () => {
 
     watcher.stop();
 
-    expect(sink.events.some((event) => event.type === "git.main.updated" && event.commit === "commit-a")).toBe(true);
+    expect(
+      sink.events.some(
+        (event) => event.type === "docs.update" && event.paths.some((entry) => entry === ".git/refs/heads/main"),
+      ),
+    ).toBe(true);
   });
 
-  it("emits acceptance.result.created for new result files", async () => {
+  it("emits docs.update for new result files", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-result-watch-"));
     const resultsDir = path.join(tempDir, "results");
     await fs.mkdir(resultsDir, { recursive: true });
@@ -54,12 +58,14 @@ describe("watchers", () => {
 
     expect(
       sink.events.some(
-        (event) => event.type === "acceptance.result.created" && event.path.endsWith("ATR-20260101-001.json"),
+        (event) =>
+          event.type === "docs.update" &&
+          event.paths.some((entry) => entry.endsWith(path.join("results", "ATR-20260101-001.json"))),
       ),
     ).toBe(true);
   });
 
-  it("emits backlog.poll.tick repeatedly", async () => {
+  it("emits docs.update repeatedly from backlog poller", async () => {
     const sink = new RecordingSink();
     const poller = new BacklogPoller(sink, "Developer", 20);
     poller.start();
@@ -67,6 +73,11 @@ describe("watchers", () => {
     await sleep(70);
     poller.stop();
 
-    expect(sink.events.filter((event) => event.type === "backlog.poll.tick").length).toBeGreaterThanOrEqual(2);
+    expect(
+      sink.events.filter(
+        (event) =>
+          event.type === "docs.update" && event.paths.some((entry) => entry === ".codefleet/data/backlog-items.json"),
+      ).length,
+    ).toBeGreaterThanOrEqual(2);
   });
 });

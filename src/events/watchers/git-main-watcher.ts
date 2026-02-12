@@ -43,7 +43,7 @@ export class GitMainWatcher {
     }
 
     this.lastCommit = commit;
-    await this.sink.publish({ type: "git.main.updated", commit });
+    await this.sink.publish({ type: "docs.update", paths: [path.join(".git", "refs", "heads", "main")] });
   }
 
   private async readMainCommit(): Promise<string | null> {

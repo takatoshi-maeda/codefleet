@@ -52,7 +52,7 @@ export class ResultFileWatcher {
       }
 
       this.knownFiles.add(file);
-      await this.sink.publish({ type: "acceptance.result.created", path: path.join(this.resultsDir, file) });
+      await this.sink.publish({ type: "docs.update", paths: [path.join(this.resultsDir, file)] });
     }
   }
 }

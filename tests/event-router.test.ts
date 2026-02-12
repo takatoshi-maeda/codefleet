@@ -10,23 +10,13 @@ class RecordingDispatcher {
 }
 
 describe("EventRouter", () => {
-  it("routes known events to expected commands", async () => {
+  it("routes docs.update events to expected commands", async () => {
     const dispatcher = new RecordingDispatcher();
     const router = new EventRouter(dispatcher, { dedupeWindowMs: 1_000 });
 
-    await router.route({ type: "manual.triggered", actor: "Orchestrator" });
-    await router.route({ type: "git.main.updated", commit: "abc123" });
-    await router.route({ type: "acceptance.result.created", path: "/tmp/ATR-1.json" });
-    await router.route({ type: "backlog.poll.tick", actor: "Developer", at: "2026-01-01T00:00:00.000Z" });
-    await router.route({ type: "fleet.lifecycle.changed", status: "running" });
     await router.route({ type: "docs.update", paths: ["docs/requirements.md", "docs/backlog.md"] });
 
     expect(dispatcher.executions).toEqual([
-      { executable: "codefleet-acceptance-test", args: ["list"] },
-      { executable: "codefleet-acceptance-test", args: ["list"] },
-      { executable: "codefleet-backlog", args: ["list"] },
-      { executable: "codefleet-backlog", args: ["list", "--status", "wait-implementation"] },
-      { executable: "codefleet", args: ["status"] },
       { executable: "codefleet-acceptance-test", args: ["list"] },
     ]);
   });
@@ -35,8 +25,8 @@ describe("EventRouter", () => {
     const dispatcher = new RecordingDispatcher();
     const router = new EventRouter(dispatcher, { dedupeWindowMs: 5_000 });
 
-    const first = await router.route({ type: "git.main.updated", commit: "abc123" });
-    const second = await router.route({ type: "git.main.updated", commit: "abc123" });
+    const first = await router.route({ type: "docs.update", paths: ["docs/spec.md", "docs/backlog.md"] });
+    const second = await router.route({ type: "docs.update", paths: ["docs/backlog.md", "docs/spec.md"] });
 
     expect(first.deduped).toBe(false);
     expect(second.deduped).toBe(true);

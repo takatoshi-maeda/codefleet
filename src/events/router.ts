@@ -1,11 +1,6 @@
 import { spawn } from "node:child_process";
 
 export type SystemEvent =
-  | { type: "manual.triggered"; actor: "Orchestrator" | "Gatekeeper" | "Developer" }
-  | { type: "git.main.updated"; commit: string }
-  | { type: "acceptance.result.created"; path: string }
-  | { type: "backlog.poll.tick"; actor: "Developer" | "Gatekeeper"; at: string }
-  | { type: "fleet.lifecycle.changed"; status: "starting" | "running" | "stopped" | "degraded" }
   | { type: "docs.update"; paths: string[] };
 
 export interface CommandExecution {
@@ -81,45 +76,12 @@ export class EventRouter {
   }
 
   private mapToExecutions(event: SystemEvent): CommandExecution[] {
-    switch (event.type) {
-      case "manual.triggered":
-      case "git.main.updated":
-        return [{ executable: "codefleet-acceptance-test", args: ["list"] }];
-      case "acceptance.result.created":
-        return [{ executable: "codefleet-backlog", args: ["list"] }];
-      case "backlog.poll.tick":
-        return [{ executable: "codefleet-backlog", args: ["list", "--status", "wait-implementation"] }];
-      case "fleet.lifecycle.changed":
-        return [{ executable: "codefleet", args: ["status"] }];
-      case "docs.update":
-        return [{ executable: "codefleet-acceptance-test", args: ["list"] }];
-      default: {
-        const neverEvent: never = event;
-        throw new Error(`unsupported event: ${JSON.stringify(neverEvent)}`);
-      }
-    }
+    return [{ executable: "codefleet-acceptance-test", args: ["list"] }];
   }
 
   private createDedupeKey(event: SystemEvent): string {
-    switch (event.type) {
-      case "manual.triggered":
-        return `${event.type}:${event.actor}`;
-      case "git.main.updated":
-        return `${event.type}:${event.commit}`;
-      case "acceptance.result.created":
-        return `${event.type}:${event.path}`;
-      case "backlog.poll.tick":
-        return `${event.type}:${event.actor}:${event.at}`;
-      case "fleet.lifecycle.changed":
-        return `${event.type}:${event.status}`;
-      case "docs.update":
-        // Order-independent key avoids duplicate processing when the same path set arrives in a different order.
-        return `${event.type}:${[...event.paths].sort().join("|")}`;
-      default: {
-        const neverEvent: never = event;
-        throw new Error(`unsupported event: ${JSON.stringify(neverEvent)}`);
-      }
-    }
+    // Order-independent key avoids duplicate processing when the same path set arrives in a different order.
+    return `${event.type}:${[...event.paths].sort().join("|")}`;
   }
 
   private pruneStaleEntries(): void {

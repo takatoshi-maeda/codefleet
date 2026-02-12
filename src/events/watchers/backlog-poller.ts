@@ -34,10 +34,11 @@ export class BacklogPoller {
   }
 
   private async emitTick(): Promise<void> {
+    // Polling does not point to a concrete changed file, so we emit a stable
+    // domain path token that downstream handlers can map to backlog updates.
     await this.sink.publish({
-      type: "backlog.poll.tick",
-      actor: this.actor,
-      at: new Date().toISOString(),
+      type: "docs.update",
+      paths: [".codefleet/data/backlog-items.json"],
     });
   }
 }

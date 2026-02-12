@@ -32,11 +32,8 @@ describe("trigger command", () => {
 
     await expect(command.parseAsync(["--help"], { from: "user" })).rejects.toBeDefined();
 
-    expect(output).toContain("manual.triggered");
-    expect(output).toContain("--actor <actor>");
     expect(output).toContain("docs.update");
     expect(output).toContain("--paths <path> (repeatable/comma-separated)");
-    expect(output).not.toContain("manual.triggered [options]");
     expect(output).not.toContain("docs.update [options]");
   });
 
@@ -76,22 +73,12 @@ describe("trigger command", () => {
     expect(logSpy).toHaveBeenCalled();
   });
 
-  it("builds manual.triggered event", async () => {
+  it("rejects unknown event subcommand", async () => {
     const router = new RecordingRouter();
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
-
-    await createTriggerCommand({ router }).parseAsync(["manual.triggered", "--actor", "Developer"], {
-      from: "user",
-    });
-
-    expect(router.events).toEqual([{ type: "manual.triggered", actor: "Developer" }]);
-  });
-
-  it("rejects invalid enum value for an event param", async () => {
-    const router = new RecordingRouter();
+    const command = createTriggerCommand({ router }).exitOverride();
 
     await expect(
-      createTriggerCommand({ router }).parseAsync(["manual.triggered", "--actor", "UnknownRole"], { from: "user" }),
-    ).rejects.toThrow("manual.triggered: invalid actor 'UnknownRole'");
+      command.parseAsync(["manual.triggered", "--actor", "Developer"], { from: "user" }),
+    ).rejects.toThrow(/unknown command 'manual\.triggered'/u);
   });
 });
