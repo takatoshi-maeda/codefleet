@@ -2,7 +2,10 @@
 import { createBacklogCommand } from "./commands/backlog.js";
 
 export function createBacklogCli() {
-  return createBacklogCommand({ commandName: "codefleet-backlog" }).version("0.1.0");
+  return createBacklogCommand({
+    commandName: "codefleet-backlog",
+    executableName: "codefleet-backlog",
+  }).version("0.1.0");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

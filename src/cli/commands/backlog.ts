@@ -4,14 +4,23 @@ import { BacklogService } from "../../domain/backlog/backlog-service.js";
 
 interface BacklogCommandOptions {
   commandName?: string;
+  executableName?: string;
 }
 
 export function createBacklogCommand(options: BacklogCommandOptions = {}): Command {
   const service = new BacklogService();
   const commandName = options.commandName ?? "backlog";
+  const executableName = options.executableName ?? `codefleet ${commandName}`;
 
   const cmd = new Command(commandName);
   cmd.description("Manage backlog epics and items.");
+  cmd.option("--help-for-agent", "Show role-specific guidance for backlog command usage by agents");
+  cmd.action((options: { helpForAgent?: boolean }) => {
+    if (!options.helpForAgent) {
+      return;
+    }
+    console.log(buildBacklogAgentUsageHelp(executableName));
+  });
 
   cmd
     .command("list")
@@ -186,4 +195,47 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
 
 function collectRepeatable(value: string, previous: string[] = []): string[] {
   return [...previous, value];
+}
+
+function buildBacklogAgentUsageHelp(executableName: string): string {
+  // Keep this output stable and markdown-oriented so agents can consume it as structured CLI guidance.
+  return [
+    "# backlog --help-for-agent",
+    "",
+    "## Role-specific use cases and recommended usage",
+    "",
+    "### Orchestrator",
+    "- Use case: Break down implementation work and maintain execution order across epics and items.",
+    "- Recommended usage:",
+    "  - Create epics first, then add items linked to the right epic.",
+    "  - Use visibility/dependency settings to prevent agents from starting blocked work.",
+    "- Key commands:",
+    "```bash",
+    `${executableName} epic add --title \"...\" --visibility-type always-visible`,
+    `${executableName} item add --epic E-001 --title \"...\"`,
+    `${executableName} list`,
+    "```",
+    "",
+    "### Developer",
+    "- Use case: Understand assigned scope and keep implementation progress synchronized.",
+    "- Recommended usage:",
+    "  - Inspect epic/item status before starting implementation.",
+    "  - Update item status and notes to leave a clear handoff trail.",
+    "- Key commands:",
+    "```bash",
+    `${executableName} item list --status in-progress`,
+    `${executableName} item update --id I-001 --status done --add-note \"...\"`,
+    "```",
+    "",
+    "### Gatekeeper",
+    "- Use case: Validate completion gates and keep backlog state aligned with verification outcomes.",
+    "- Recommended usage:",
+    "  - Reopen items when acceptance verification fails.",
+    "  - Confirm linked epics/items are consistent with test and review outcomes.",
+    "- Key commands:",
+    "```bash",
+    `${executableName} item update --id I-001 --status in-progress --reopen`,
+    `${executableName} epic list --status done`,
+    "```",
+  ].join("\n");
 }
