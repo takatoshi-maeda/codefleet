@@ -104,6 +104,11 @@ interface ReadByIdInput {
   id: string;
 }
 
+interface UpdateStatusAllTodoResult {
+  updatedEpicIds: string[];
+  updatedItemIds: string[];
+}
+
 type NormalizedBacklogItems = Omit<BacklogItems, "questions"> & { questions: BacklogQuestion[] };
 
 export class BacklogService {
@@ -223,6 +228,46 @@ export class BacklogService {
       [`- epic claimed for implementation: ${candidate.id}`],
     );
     return candidate;
+  }
+
+  async updateStatusAllTodo(actorId?: string): Promise<UpdateStatusAllTodoResult> {
+    const items = await this.getOrInitializeItems();
+    const updatedEpicIds = items.epics.filter((epic) => epic.status !== "todo").map((epic) => epic.id);
+    const updatedItemIds = items.items.filter((item) => item.status !== "todo").map((item) => item.id);
+
+    if (updatedEpicIds.length === 0 && updatedItemIds.length === 0) {
+      return { updatedEpicIds, updatedItemIds };
+    }
+
+    const now = new Date().toISOString();
+    const updatedEpicIdSet = new Set(updatedEpicIds);
+    const updatedItemIdSet = new Set(updatedItemIds);
+    // This administrative reset intentionally bypasses normal transition guards so operators can
+    // rebuild execution queues from a clean "todo" state in one atomic update.
+    for (const epic of items.epics) {
+      if (!updatedEpicIdSet.has(epic.id)) {
+        continue;
+      }
+      epic.status = "todo";
+      epic.updatedAt = now;
+    }
+    for (const item of items.items) {
+      if (!updatedItemIdSet.has(item.id)) {
+        continue;
+      }
+      item.status = "todo";
+      item.updatedAt = now;
+    }
+    items.updatedAt = now;
+
+    const epicSummary = updatedEpicIds.length > 0 ? ` (${updatedEpicIds.join(", ")})` : "";
+    const itemSummary = updatedItemIds.length > 0 ? ` (${updatedItemIds.join(", ")})` : "";
+    await this.persistWithChangeLog(items, await this.resolveRole(actorId), [
+      "- epic/item statuses reset to todo",
+      `- epics updated: ${updatedEpicIds.length}${epicSummary}`,
+      `- items updated: ${updatedItemIds.length}${itemSummary}`,
+    ]);
+    return { updatedEpicIds, updatedItemIds };
   }
 
   async addEpic(input: AddEpicInput): Promise<BacklogEpic> {

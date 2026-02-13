@@ -47,6 +47,15 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
       console.log(JSON.stringify(listed, null, 2));
     });
 
+  cmd
+    .command("update-status-all-todo")
+    .description("Set all epic/item statuses to todo")
+    .option("--actor-id <actorId>", "Current actor id")
+    .action(async (options) => {
+      const updated = await service.updateStatusAllTodo(options.actorId as string | undefined);
+      console.log(JSON.stringify(updated, null, 2));
+    });
+
   const epic = cmd.command("epic").description("Manage backlog epics");
   epic
     .command("add")

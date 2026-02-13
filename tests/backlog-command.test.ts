@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBacklogCli } from "../src/cli/codefleet-backlog.js";
+import { BacklogService } from "../src/domain/backlog/backlog-service.js";
 
 describe("backlog command", () => {
   afterEach(() => {
@@ -96,5 +97,34 @@ describe("backlog command", () => {
     await expect(command.parseAsync(["requirements", "--help"], { from: "user" })).rejects.toBeDefined();
     expect(output).toContain("write");
     expect(output).toContain("read");
+  });
+
+  it("shows update-status-all-todo in top-level help", async () => {
+    const command = createBacklogCli();
+    let output = "";
+    command
+      .exitOverride()
+      .configureOutput({
+        writeOut: (str) => {
+          output += str;
+        },
+        writeErr: (str) => {
+          output += str;
+        },
+      });
+
+    await expect(command.parseAsync(["--help"], { from: "user" })).rejects.toBeDefined();
+    expect(output).toContain("update-status-all-todo");
+  });
+
+  it("updates all epic/item statuses to todo", async () => {
+    const payload = { updatedEpicIds: ["E-001"], updatedItemIds: ["I-001"] };
+    const updateSpy = vi.spyOn(BacklogService.prototype, "updateStatusAllTodo").mockResolvedValue(payload);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createBacklogCli().parseAsync(["update-status-all-todo", "--actor-id", "pm-agent"], { from: "user" });
+
+    expect(updateSpy).toHaveBeenCalledWith("pm-agent");
+    expect(logSpy).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
   });
 });

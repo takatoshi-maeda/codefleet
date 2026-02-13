@@ -393,6 +393,46 @@ describe("BacklogService", () => {
     expect(forced.status).toBe("todo");
   });
 
+  it("resets all epic/item statuses to todo in a single operation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const doneEpic = await service.addEpic({ title: "done epic", status: "done", acceptanceTestIds: [] });
+    const todoEpic = await service.addEpic({ title: "todo epic", acceptanceTestIds: [] });
+    const activeItem = await service.addItem({
+      epicId: doneEpic.id,
+      title: "active item",
+      status: "in-progress",
+      acceptanceTestIds: [],
+    });
+    await service.addItem({ epicId: todoEpic.id, title: "todo item", acceptanceTestIds: [] });
+
+    const reset = await service.updateStatusAllTodo();
+    expect(reset).toEqual({
+      updatedEpicIds: [doneEpic.id],
+      updatedItemIds: [activeItem.id],
+    });
+
+    const listed = await service.list({ includeHidden: true });
+    expect(listed.epics.every((epic) => epic.status === "todo")).toBe(true);
+    expect(listed.items.every((item) => item.status === "todo")).toBe(true);
+
+    const secondReset = await service.updateStatusAllTodo();
+    expect(secondReset).toEqual({ updatedEpicIds: [], updatedItemIds: [] });
+  });
+
   it("reads and writes single requirements text", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
