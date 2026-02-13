@@ -3,20 +3,37 @@
 This event indicates that backlog refinement is required after upstream specification updates.
 
 Objectives:
-- First, run `codefleet-backlog --help-for-agent` to load agent-specific usage guidance.
-- Also run `bin/codefleet-acceptance-test --help-for-agent` to load agent-specific guidance for reading and maintaining acceptance criteria.
-- Before any backlog decision, run `codefleet-acceptance-test list` and explicitly review the current acceptance criteria.
-- Retrieve the current acceptance criteria by using `bin/codefleet-acceptance-test`, and treat those criteria as the primary source for backlog creation and refinement.
-- If acceptance criteria cannot be listed or confirmed, stop backlog refinement and report that blocker explicitly instead of proceeding with assumptions.
-- Refine backlog Epics and Items by executing `codefleet-backlog` commands that actually register/update backlog data, not by proposing a plan only in text.
-- Treat backlog planning as executable development planning, not documentation-only maintenance.
-- Even when information is incomplete, make autonomous cross-functional decisions (product, technical design, and UX) and convert them into actionable backlog structure.
-- Ensure the backlog enables smooth implementation flow, including practical sequencing, dependency control, and clear readiness for developers.
+- Execute backlog refinement as data operations, not as a text-only proposal.
+- Do not directly edit internal codefleet files. Use CLI commands only.
+- Use this fixed sequence and do not skip steps:
+  1) `codefleet-backlog --help-for-agent`
+  2) `bin/codefleet-acceptance-test --help-for-agent`
+  3) `codefleet-acceptance-test list`
+  4) If ambiguity exists, register it with `codefleet-backlog question add`
+  5) Create/update Epics with `codefleet-backlog epic add/update`
+  6) Create/update Items with `codefleet-backlog item add/update`
+  7) Verify saved state with `codefleet-backlog epic list`
+  8) Verify saved state with `codefleet-backlog item list`
+- If important information is missing, continue with best-effort assumptions and speculative Epic/Item creation, but always record unresolved points as questions.
+- Use Epic granularity as one feature-sized Pull Request by default.
+- Use BacklogItem granularity as readable, reviewable commit-sized increments.
 
 Output requirements:
-- Start with a concise planning-intent summary of what delivery outcome the refined backlog is meant to unlock.
-- Provide a backlog refinement result grounded in acceptance criteria from `bin/codefleet-acceptance-test`, `codefleet-backlog` command outputs, and your cross-functional judgment.
-- Include a short "Acceptance source check" section that states `codefleet-acceptance-test list` was run and summarizes the criteria used for planning.
-- Register/update concrete Epics and Items through commands, then verify final state with both `codefleet-backlog epic list` and `codefleet-backlog item list`.
-- Explicitly state assumptions and trade-off decisions made due to missing information.
-- Include a clear Definition of Done: completion means backlog data is updated in storage and can be confirmed via `codefleet-backlog epic list` and `codefleet-backlog item list`; text-only plan responses are not sufficient.
+- Start with a concise planning-intent summary.
+- Provide this evidence-first structure:
+  - `Executed commands:` list all executed commands in order.
+  - `Acceptance source check:` summarize what was confirmed from `codefleet-acceptance-test list`.
+  - `Questions raised:` list each `codefleet-backlog question add` result (or `none`).
+  - `Backlog changes:` summarize created/updated Epic IDs and Item IDs.
+  - `Verification:` summarize what `codefleet-backlog epic list` and `codefleet-backlog item list` confirmed.
+  - `Assumptions used:` list assumptions used for speculative planning.
+- Never finish with only a planning narrative. Command execution evidence is mandatory.
+
+Definition of Done (strict):
+- Done only if all conditions are true:
+  - `codefleet-acceptance-test list` was executed.
+  - Required backlog questions were added for unresolved ambiguities.
+  - Epics were persisted via `codefleet-backlog epic add/update`.
+  - Items were persisted via `codefleet-backlog item add/update`.
+  - Persisted results were verified by both `codefleet-backlog epic list` and `codefleet-backlog item list`.
+- If any condition is missing, report `NOT DONE` with the missing command/action.
