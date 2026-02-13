@@ -281,6 +281,91 @@ describe("BacklogService", () => {
     expect(listedTechnical.items.map((item) => item.epicId)).toEqual([technicalEpic.id]);
   });
 
+  it("filters listed items by epicId", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const firstEpic = await service.addEpic({ title: "first epic", acceptanceTestIds: [] });
+    const secondEpic = await service.addEpic({ title: "second epic", acceptanceTestIds: [] });
+    await service.addItem({ epicId: firstEpic.id, title: "item 1", acceptanceTestIds: [] });
+    await service.addItem({ epicId: secondEpic.id, title: "item 2", acceptanceTestIds: [] });
+
+    const filtered = await service.list({ epicId: firstEpic.id, includeHidden: true });
+    expect(filtered.items).toHaveLength(1);
+    expect(filtered.items[0]?.epicId).toBe(firstEpic.id);
+  });
+
+  it("reads epic/item by id and rejects unknown ids", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({ title: "read target", acceptanceTestIds: [] });
+    const item = await service.addItem({ epicId: epic.id, title: "read item", acceptanceTestIds: [] });
+
+    const loadedEpic = await service.readEpic({ id: epic.id });
+    expect(loadedEpic.id).toBe(epic.id);
+    const loadedItem = await service.readItem({ id: item.id });
+    expect(loadedItem.id).toBe(item.id);
+
+    await expect(service.readEpic({ id: "E-999" })).rejects.toMatchObject<Partial<CodefleetError>>({
+      code: "ERR_NOT_FOUND",
+    });
+    await expect(service.readItem({ id: "I-999" })).rejects.toMatchObject<Partial<CodefleetError>>({
+      code: "ERR_NOT_FOUND",
+    });
+  });
+
+  it("allows bypassing epic status transition guard with force option", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({ title: "force transition", acceptanceTestIds: [] });
+    await service.updateEpic({ id: epic.id, status: "in-progress" });
+
+    await expect(service.updateEpic({ id: epic.id, status: "todo" })).rejects.toMatchObject<Partial<CodefleetError>>({
+      code: "ERR_VALIDATION",
+    });
+
+    const forced = await service.updateEpic({ id: epic.id, status: "todo", force: true });
+    expect(forced.status).toBe("todo");
+  });
+
   it("reads and writes single requirements text", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");

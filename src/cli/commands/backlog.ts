@@ -186,6 +186,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
   item
     .command("list")
     .description("List backlog items")
+    .option("--epic-id <epicId>", "Filter by epic id")
     .option("--status <status>", "Filter by status")
     .option("--kind <kind>", "Filter by kind (product|technical)")
     .option("--visible-only", "Show only items linked to currently visible epics")
@@ -193,6 +194,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
     .option("--actor-id <actorId>", "Current actor id")
     .action(async (options) => {
       const listed = await service.list({
+        epicId: options.epicId as string | undefined,
         status: options.status as BacklogItemStatus | undefined,
         kind: options.kind as BacklogWorkKind | undefined,
         includeHidden: !Boolean(options.visibleOnly),

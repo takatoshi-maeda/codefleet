@@ -29,6 +29,7 @@ type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper";
 interface ListInput {
   status?: BacklogEpicStatus | BacklogItemStatus;
   kind?: BacklogWorkKind;
+  epicId?: string;
   includeHidden?: boolean;
   actorId?: string;
 }
@@ -172,6 +173,7 @@ export class BacklogService {
     const backlogItems = items.items.filter(
       (item) =>
         visibleEpicIds.has(item.epicId) &&
+        (!input.epicId || item.epicId === input.epicId) &&
         (!input.status || item.status === input.status) &&
         (!input.kind || item.kind === input.kind),
     );
