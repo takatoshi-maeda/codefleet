@@ -5,6 +5,7 @@ This event indicates that backlog refinement is required after upstream specific
 Objectives:
 - Persist a high-quality backlog refinement aligned with the latest upstream specification updates.
 - Represent planning as saved backlog data (Epics, Items, and Questions), not as a text-only proposal.
+- Update the shared requirements text via `codefleet-backlog requirements write` so the latest planning intent is persisted as a single source of truth, based on repository evidence.
 - Ensure ambiguity is explicitly captured, assumptions are transparent, and outcomes are verifiable.
 - Keep backlog structure implementation-ready:
   - Epics should generally map to one feature-sized Pull Request.
@@ -13,28 +14,17 @@ Objectives:
 
 Tool Usage Guidelines:
 - Do not directly edit internal codefleet files. Use CLI commands only.
-- Follow this fixed command sequence and do not skip steps:
-  1) `codefleet-backlog --help-for-agent`
-  2) `codefleet-acceptance-test --help-for-agent`
-  3) `codefleet-acceptance-test list`
-  4) If ambiguity exists, register it with `codefleet-backlog question add`
-  5) Create/update Epics with `codefleet-backlog epic add/update`
-  6) Create/update Items with `codefleet-backlog item add/update`
-  7) Verify saved state with `codefleet-backlog epic list`
-  8) Verify saved state with `codefleet-backlog item list`
+- Before writing requirements, explore the repository and collect evidence from both documentation and codebase.
+- Start by running `codefleet-backlog --help-for-agent` and `codefleet-acceptance-test --help-for-agent` to understand the intended command usage, then choose and execute the necessary commands for exploration, requirements updates, backlog updates, and verification.
 - If important information is missing, continue with best-effort assumptions and speculative Epic/Item creation, and always record unresolved points as questions.
-- Report with command-evidence first:
-  - `Executed commands:` list all executed commands in order.
-  - `Acceptance source check:` summarize what was confirmed from `codefleet-acceptance-test list`.
-  - `Questions raised:` list each `codefleet-backlog question add` result (or `none`).
-  - `Backlog changes:` summarize created/updated Epic IDs and Item IDs.
-  - `Verification:` summarize what `codefleet-backlog epic list` and `codefleet-backlog item list` confirmed.
-  - `Assumptions used:` list assumptions used for speculative planning.
+- Report format is free. Include enough command evidence and rationale to make actions and outcomes verifiable.
 - Never finish with only a planning narrative. Command execution evidence is mandatory.
 
 Definition of Done (strict):
 - Done only if all conditions are true:
+  - Repository exploration was performed and documented using both docs and codebase evidence.
   - `codefleet-acceptance-test list` was executed.
+  - Requirements were updated via `codefleet-backlog requirements write`.
   - Required backlog questions were added for unresolved ambiguities.
   - Epics were persisted via `codefleet-backlog epic add/update`.
   - Items were persisted via `codefleet-backlog item add/update`.
