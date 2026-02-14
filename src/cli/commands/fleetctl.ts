@@ -107,11 +107,13 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--epic-ready-poll-interval-sec <seconds>", "Polling interval for backlog epic ready detection", "3")
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
+    .option("--reviewers <count>", "Number of Reviewer agents", "1")
     .action(async (options) => {
       logMode = Boolean(options.verbose) ? "jsonl" : "human";
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
       const developers = Number(options.developers);
+      const reviewers = Number(options.reviewers);
       const lang = typeof options.lang === "string" ? options.lang : undefined;
       const epicReadyPollIntervalMs = parsePositivePollIntervalMs(
         options.epicReadyPollIntervalSec,
@@ -122,6 +124,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         const detachedPid = await spawnDetachedSupervisorProcess({
           gatekeepers,
           developers,
+          reviewers,
           verbose: Boolean(options.verbose),
           lang,
           epicReadyPollIntervalMs,
@@ -135,6 +138,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
             orchestrators: 1,
             gatekeepers,
             developers,
+            reviewers,
           },
         });
         return;
@@ -149,10 +153,11 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           orchestrators: 1,
           gatekeepers,
           developers,
+          reviewers,
         },
       });
 
-      const status = await service.up({ detached: false, gatekeepers, developers, lang });
+      const status = await service.up({ detached: false, gatekeepers, developers, reviewers, lang });
       for (const agent of status.agents) {
         emitAgentRuntimeLog(agent, emit);
       }
@@ -204,11 +209,13 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("-d, --detached", "Run in background")
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
+    .option("--reviewers <count>", "Number of Reviewer agents", "1")
     .action(async (options) => {
       const status = await service.restart({
         detached: Boolean(options.detached),
         gatekeepers: Number(options.gatekeepers),
         developers: Number(options.developers),
+        reviewers: Number(options.reviewers),
       });
       console.log(JSON.stringify(status, null, 2));
     });
@@ -514,6 +521,11 @@ async function prepareDispatchMessage(
     return message;
   }
 
+  if (message.event.epicId) {
+    // Explicit epic dispatch is used by review-requested rework. Skip auto-claiming.
+    return message;
+  }
+
   // Claiming at consume-time keeps enqueue cheap and avoids losing epics when
   // queued messages fail before an agent actually starts handling the task.
   const claimed = await backlogService.claimReadyEpicForImplementation(message.agentId);
@@ -543,7 +555,7 @@ async function finalizeEpicExecutionStatus(
 
   await backlogService.updateEpic({
     id: message.event.epicId,
-    status: error ? "failed" : "done",
+    status: error ? "failed" : "in-review",
     force: true,
     actorId,
   });
@@ -560,6 +572,7 @@ function parsePositivePollIntervalMs(raw: unknown, optionName: string): number {
 async function spawnDetachedSupervisorProcess(input: {
   gatekeepers: number;
   developers: number;
+  reviewers: number;
   verbose: boolean;
   lang?: string;
   epicReadyPollIntervalMs: number;
@@ -571,6 +584,8 @@ async function spawnDetachedSupervisorProcess(input: {
     String(input.gatekeepers),
     "--developers",
     String(input.developers),
+    "--reviewers",
+    String(input.reviewers),
   ];
   if (input.verbose) {
     args.push("--verbose");

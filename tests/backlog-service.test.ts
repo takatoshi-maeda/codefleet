@@ -246,6 +246,7 @@ describe("BacklogService", () => {
     expect(readyBefore.map((epic) => epic.id)).toEqual([first.id]);
 
     await service.updateEpic({ id: first.id, status: "in-progress" });
+    await service.updateEpic({ id: first.id, status: "in-review" });
     await service.updateEpic({ id: first.id, status: "done" });
     const readyAfter = await service.listReadyEpics();
     expect(readyAfter.map((epic) => epic.id)).toEqual(["E-001", "E-002"]);
@@ -276,6 +277,31 @@ describe("BacklogService", () => {
 
     const readyTodo = await service.listReadyEpics("todo");
     expect(readyTodo.map((epic) => epic.id)).toEqual([second.id]);
+  });
+
+  it("does not claim a new todo epic while another epic is in-review", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const first = await service.addEpic({ title: "first", acceptanceTestIds: [] });
+    await service.addEpic({ title: "second", acceptanceTestIds: [] });
+    await service.updateEpic({ id: first.id, status: "in-progress" });
+    await service.updateEpic({ id: first.id, status: "in-review" });
+
+    const claimed = await service.claimReadyEpicForImplementation("developer-1");
+    expect(claimed).toBeNull();
   });
 
   it("supports kind classification and filtering for epics/items", async () => {

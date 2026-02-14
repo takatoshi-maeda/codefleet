@@ -63,20 +63,21 @@ export class AgentEventQueueService {
     event: SystemEvent,
     runningAgents: AgentRuntimeCollection["agents"],
   ): Promise<AgentRuntimeCollection["agents"]> {
-    if (event.type !== "backlog.epic.ready") {
+    if (event.type !== "backlog.epic.ready" && event.type !== "backlog.epic.review.ready") {
       return runningAgents;
     }
 
-    // Developer work for "epic ready" must run serially: select only one developer
-    // and drop duplicate wake-up events while one is already pending/processing.
-    const developer = runningAgents.find((agent) => agent.role === "Developer");
-    if (!developer) {
+    const targetRole = event.type === "backlog.epic.ready" ? "Developer" : "Reviewer";
+    // Epic implementation/review work is serialized per role to keep execution
+    // deterministic and avoid duplicate handling for the same transition stage.
+    const target = runningAgents.find((agent) => agent.role === targetRole);
+    if (!target) {
       return [];
     }
-    if (await this.hasInFlightEvent(developer.id, event.type)) {
+    if (await this.hasInFlightEvent(target.id, event.type)) {
       return [];
     }
-    return [developer];
+    return [target];
   }
 
   private async hasInFlightEvent(agentId: string, eventType: SystemEvent["type"]): Promise<boolean> {

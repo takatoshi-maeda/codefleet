@@ -96,24 +96,25 @@ describe("FleetService", () => {
 
     const upStatus = await service.up();
     expect(upStatus.summary).toBe("running");
-    expect(upStatus.agents).toHaveLength(3);
+    expect(upStatus.agents).toHaveLength(4);
     expect(upStatus.agents.every((agent) => agent.status === "running")).toBe(true);
     expect(upStatus.sessions.every((session) => session.status === "ready")).toBe(true);
     expect(appServer.started).toEqual([
       expect.objectContaining({ agentId: "orchestrator-1", role: "Orchestrator", detached: false }),
       expect.objectContaining({ agentId: "gatekeeper-1", role: "Gatekeeper", detached: false }),
       expect.objectContaining({ agentId: "developer-1", role: "Developer", detached: false }),
+      expect.objectContaining({ agentId: "reviewer-1", role: "Reviewer", detached: false }),
     ]);
     expect(appServer.started.every((call) => call.prompt.length > 0)).toBe(true);
 
     const downStatus = await service.down({ all: true });
     expect(downStatus.summary).toBe("stopped");
-    expect(downStatus.agents).toHaveLength(3);
+    expect(downStatus.agents).toHaveLength(4);
     expect(downStatus.agents.every((agent) => agent.status === "stopped")).toBe(true);
-    expect(downStatus.sessions).toHaveLength(3);
+    expect(downStatus.sessions).toHaveLength(4);
     expect(downStatus.sessions.every((session) => session.status === "disconnected")).toBe(true);
-    expect(processManager.stopped.length).toBe(3);
-    expect(processManager.stopped).toEqual([12345, 12345, 12345]);
+    expect(processManager.stopped.length).toBe(4);
+    expect(processManager.stopped).toEqual([12345, 12345, 12345, 12345]);
   });
 
   it("uses role counts, filters by role and tails logs", async () => {
@@ -193,7 +194,7 @@ describe("FleetService", () => {
     expect(status.sessions[0]?.activeTurnId).toBe("gatekeeper-1-event-turn");
   });
 
-  it("does not emit a follow-up system event for developer implementation prompts", async () => {
+  it("emits backlog.epic.review.ready after developer implementation prompt", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
@@ -213,9 +214,33 @@ describe("FleetService", () => {
       agentRole: "Developer",
       event: { type: "backlog.epic.ready", epicId: "E-123" },
     });
-    expect(emittedEvent).toBeNull();
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Prompt template: implementation.md");
+    expect(emittedEvent).toEqual({ type: "backlog.epic.review.ready", epicId: "E-123" });
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Epic ID to implement now: E-123");
+  });
+
+  it("starts reviewer review prompt for backlog.epic.review.ready", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up();
+    const emittedEvent = await service.dispatchAgentEvent({
+      agentId: "reviewer-1",
+      agentRole: "Reviewer",
+      event: { type: "backlog.epic.review.ready", epicId: "E-456" },
+    });
+
+    expect(emittedEvent).toBeNull();
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Epic ID to review now: E-456");
   });
 
   it("emits backlog.update after orchestrator handles acceptance-test.update", async () => {

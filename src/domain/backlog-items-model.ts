@@ -1,4 +1,11 @@
-export type BacklogEpicStatus = "todo" | "in-progress" | "done" | "blocked" | "failed";
+export type BacklogEpicStatus =
+  | "todo"
+  | "in-progress"
+  | "in-review"
+  | "changes-requested"
+  | "done"
+  | "blocked"
+  | "failed";
 export type BacklogItemStatus = "todo" | "wait-implementation" | "in-progress" | "done" | "blocked";
 export type BacklogQuestionStatus = "open" | "answered";
 export type BacklogWorkKind = "product" | "technical";

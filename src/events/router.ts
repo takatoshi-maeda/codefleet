@@ -4,13 +4,15 @@ export type SystemEvent =
   | { type: "docs.update"; paths: string[] }
   | { type: "acceptance-test.update" }
   | { type: "backlog.update" }
-  | { type: "backlog.epic.ready"; epicId?: string };
+  | { type: "backlog.epic.ready"; epicId?: string }
+  | { type: "backlog.epic.review.ready"; epicId: string };
 
 export const SYSTEM_EVENT_TYPES: ReadonlyArray<SystemEvent["type"]> = [
   "docs.update",
   "acceptance-test.update",
   "backlog.update",
   "backlog.epic.ready",
+  "backlog.epic.review.ready",
 ];
 
 export interface SystemEventCommandOptionDefinition {
@@ -67,8 +69,38 @@ export const SYSTEM_EVENT_COMMAND_DEFINITIONS: Record<SystemEvent["type"], Syste
   },
   "backlog.epic.ready": {
     description: "SystemEvent.type=backlog.epic.ready",
-    createEvent() {
-      return { type: "backlog.epic.ready" };
+    options: [
+      {
+        key: "epicId",
+        flags: "--epic-id <epicId>",
+        description: "Target epic id (use for review-requested rework)",
+        summaryToken: "--epic-id <epicId>",
+      },
+    ],
+    createEvent(parsedOptions) {
+      const epicId = typeof parsedOptions.epicId === "string" && parsedOptions.epicId.length > 0
+        ? parsedOptions.epicId
+        : undefined;
+      return { type: "backlog.epic.ready", epicId };
+    },
+  },
+  "backlog.epic.review.ready": {
+    description: "SystemEvent.type=backlog.epic.review.ready",
+    options: [
+      {
+        key: "epicId",
+        flags: "--epic-id <epicId>",
+        description: "Epic id to review",
+        required: true,
+        summaryToken: "--epic-id <epicId>",
+      },
+    ],
+    createEvent(parsedOptions) {
+      const epicId = typeof parsedOptions.epicId === "string" ? parsedOptions.epicId.trim() : "";
+      if (epicId.length === 0) {
+        throw new Error("backlog.epic.review.ready: --epic-id must be non-empty");
+      }
+      return { type: "backlog.epic.review.ready", epicId };
     },
   },
 };

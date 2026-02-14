@@ -10,11 +10,13 @@ describe("agent-role-definitions", () => {
     expect(getAgentRoleDefinition("Orchestrator").role).toBe("Orchestrator");
     expect(getAgentRoleDefinition("Developer").role).toBe("Developer");
     expect(getAgentRoleDefinition("Gatekeeper").role).toBe("Gatekeeper");
+    expect(getAgentRoleDefinition("Reviewer").role).toBe("Reviewer");
 
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "acceptance-test.update" })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "backlog.epic.ready" })).toBe(true);
+    expect(isRoleSubscribedToEvent("Reviewer", { type: "backlog.epic.review.ready", epicId: "E-001" })).toBe(true);
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "acceptance-test.update" })).toBe(true);
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "backlog.update" })).toBe(false);
     expect(isRoleSubscribedToEvent("Gatekeeper", { type: "docs.update", paths: ["docs/a.md"] })).toBe(true);
@@ -27,14 +29,22 @@ describe("agent-role-definitions", () => {
 
     const gatekeeperPrompt = getRoleEventPromptDefinition("Gatekeeper", "docs.update");
     expect(gatekeeperPrompt.promptEventType).toBe("acceptance-test.update");
+    expect(gatekeeperPrompt.emitEventType).toBe("acceptance-test.update");
 
     const orchestratorPrompt = getRoleEventPromptDefinition("Orchestrator", "acceptance-test.update");
     expect(orchestratorPrompt.promptEventType).toBe("backlog.update");
+    expect(orchestratorPrompt.emitEventType).toBe("backlog.update");
 
     const defaultPrompt = getRoleEventPromptDefinition("Developer", "docs.update");
     expect(defaultPrompt.promptEventType).toBe("docs.update");
+    expect(defaultPrompt.emitEventType).toBeNull();
 
     const developerPrompt = getRoleEventPromptDefinition("Developer", "backlog.epic.ready");
     expect(developerPrompt.promptEventType).toBe("implementation");
+    expect(developerPrompt.emitEventType).toBe("backlog.epic.review.ready");
+
+    const reviewerPrompt = getRoleEventPromptDefinition("Reviewer", "backlog.epic.review.ready");
+    expect(reviewerPrompt.promptEventType).toBe("review");
+    expect(reviewerPrompt.emitEventType).toBeNull();
   });
 });

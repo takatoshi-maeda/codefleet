@@ -4,10 +4,12 @@ import type { AgentRole } from "../roles-model.js";
 export interface RoleEventPromptDefinition {
   triggerEventType: SystemEvent["type"];
   promptEventType: string;
+  emitEventType: SystemEvent["type"] | null;
 }
 
 export interface SubscribedEventDefinition {
   triggerEvent: string;
+  emitEvent: SystemEvent["type"] | null;
 }
 
 export interface AgentRoleDefinition {
@@ -25,6 +27,7 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
     subscribedEvents: {
       "acceptance-test.update": {
         triggerEvent: "backlog.update",
+        emitEvent: "backlog.update",
       },
     },
   },
@@ -33,6 +36,16 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
     subscribedEvents: {
       "backlog.epic.ready": {
         triggerEvent: "implementation",
+        emitEvent: "backlog.epic.review.ready",
+      },
+    },
+  },
+  Reviewer: {
+    role: "Reviewer",
+    subscribedEvents: {
+      "backlog.epic.review.ready": {
+        triggerEvent: "review",
+        emitEvent: null,
       },
     },
   },
@@ -41,6 +54,7 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
     subscribedEvents: {
       "docs.update": {
         triggerEvent: "acceptance-test.update",
+        emitEvent: "acceptance-test.update",
       },
     },
   },
@@ -64,10 +78,12 @@ export function getRoleEventPromptDefinition(
     return {
       triggerEventType,
       promptEventType: triggerEventType,
+      emitEventType: null,
     };
   }
   return {
     triggerEventType,
     promptEventType: subscribedEvent.triggerEvent,
+    emitEventType: subscribedEvent.emitEvent,
   };
 }

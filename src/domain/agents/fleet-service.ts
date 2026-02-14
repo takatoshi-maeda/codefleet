@@ -19,6 +19,7 @@ const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
 const DEFAULT_LOG_DIR = ".codefleet/logs/agents";
 const DEFAULT_GATEKEEPER_COUNT = 1;
 const DEFAULT_DEVELOPER_COUNT = 1;
+const DEFAULT_REVIEWER_COUNT = 1;
 const FIXED_ORCHESTRATOR_COUNT = 1;
 
 export interface FleetStatus {
@@ -79,12 +80,14 @@ export class FleetService {
     detached?: boolean;
     gatekeepers?: number;
     developers?: number;
+    reviewers?: number;
     lang?: string;
   } = {}): Promise<FleetStatus> {
     this.threadResponseLanguage = normalizeLanguage(input.lang);
     const targets = buildTargetAgents({
       gatekeepers: input.gatekeepers ?? DEFAULT_GATEKEEPER_COUNT,
       developers: input.developers ?? DEFAULT_DEVELOPER_COUNT,
+      reviewers: input.reviewers ?? DEFAULT_REVIEWER_COUNT,
     });
     const runtime = await this.getOrInitializeRuntime();
     const sessions = await this.getOrInitializeSessions();
@@ -207,6 +210,7 @@ export class FleetService {
     detached?: boolean;
     gatekeepers?: number;
     developers?: number;
+    reviewers?: number;
   }): Promise<FleetStatus> {
     await this.down({ all: true });
     return this.up(input);
@@ -272,14 +276,18 @@ export class FleetService {
     await this.sessionRepository.save(sessions);
 
     const eventPromptDefinition = getRoleEventPromptDefinition(input.agentRole, input.event.type);
+    const emittedEventType = eventPromptDefinition.emitEventType;
+    if (!emittedEventType) {
+      return null;
+    }
     // Re-emitting the same event type by default can create infinite self-trigger loops.
-    if (eventPromptDefinition.promptEventType === input.event.type) {
+    if (emittedEventType === input.event.type) {
       return null;
     }
-    if (!isSystemEventType(eventPromptDefinition.promptEventType)) {
+    if (!isSystemEventType(emittedEventType)) {
       return null;
     }
-    return buildFollowUpEvent(eventPromptDefinition.promptEventType, input.event);
+    return buildFollowUpEvent(emittedEventType, input.event);
   }
 
   private async getOrInitializeRuntime(): Promise<AgentRuntimeCollection> {
@@ -370,6 +378,16 @@ function buildFollowUpEvent(nextEventType: SystemEvent["type"], sourceEvent: Sys
   if (nextEventType === "backlog.update") {
     return { type: "backlog.update" };
   }
+  if (nextEventType === "backlog.epic.review.ready") {
+    const epicId = sourceEvent.type === "backlog.epic.ready" ? sourceEvent.epicId : undefined;
+    if (!epicId) {
+      throw new CodefleetError(
+        "ERR_VALIDATION",
+        "cannot emit backlog.epic.review.ready without epicId from source backlog.epic.ready event",
+      );
+    }
+    return { type: "backlog.epic.review.ready", epicId };
+  }
   return { type: "backlog.epic.ready" };
 }
 
@@ -385,16 +403,19 @@ interface TargetAgent {
 interface RoleCountInput {
   gatekeepers: number;
   developers: number;
+  reviewers: number;
 }
 
 function buildTargetAgents(counts: RoleCountInput): TargetAgent[] {
   validateRoleCount("gatekeepers", counts.gatekeepers);
   validateRoleCount("developers", counts.developers);
+  validateRoleCount("reviewers", counts.reviewers);
 
   const targets = [
     ...buildAgentsByRole("Orchestrator", "orchestrator", FIXED_ORCHESTRATOR_COUNT),
     ...buildAgentsByRole("Gatekeeper", "gatekeeper", counts.gatekeepers),
     ...buildAgentsByRole("Developer", "developer", counts.developers),
+    ...buildAgentsByRole("Reviewer", "reviewer", counts.reviewers),
   ];
   return targets;
 }

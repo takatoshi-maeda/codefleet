@@ -113,6 +113,45 @@ describe("AgentEventQueueService", () => {
     expect(result.files).toHaveLength(1);
   });
 
+  it("enqueues backlog.epic.review.ready only for a single running reviewer", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
+    const runtimeDir = path.join(tempDir, ".codefleet", "runtime");
+    await fs.mkdir(runtimeDir, { recursive: true });
+
+    const runtimes: AgentRuntimeCollection = {
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      agents: [
+        {
+          id: "reviewer-1",
+          role: "Reviewer",
+          status: "running",
+          pid: 111,
+          cwd: tempDir,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "reviewer-2",
+          role: "Reviewer",
+          status: "running",
+          pid: 222,
+          cwd: tempDir,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    await fs.writeFile(path.join(runtimeDir, "agents.json"), `${JSON.stringify(runtimes, null, 2)}\n`, "utf8");
+
+    const service = new AgentEventQueueService(runtimeDir);
+    const result = await service.enqueueToRunningAgents({ type: "backlog.epic.review.ready", epicId: "E-123" });
+
+    expect(result.enqueuedAgentIds).toEqual(["reviewer-1"]);
+    expect(result.files).toHaveLength(1);
+  });
+
   it("enqueues backlog.epic.ready only for a single running developer", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
     const runtimeDir = path.join(tempDir, ".codefleet", "runtime");

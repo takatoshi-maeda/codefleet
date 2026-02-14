@@ -24,7 +24,7 @@ const DEFAULT_BACKLOG_DIR = ".codefleet/data/backlog";
 const DEFAULT_ACCEPTANCE_SPEC_PATH = ".codefleet/data/acceptance-testing/spec.json";
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 
-type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper";
+type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper" | "Reviewer";
 
 interface ListInput {
   status?: BacklogEpicStatus | BacklogItemStatus;
@@ -209,6 +209,17 @@ export class BacklogService {
   async claimReadyEpicForImplementation(actorId?: string): Promise<BacklogEpic | null> {
     const items = await this.getOrInitializeItems();
     const epicsById = new Map(items.epics.map((epic) => [epic.id, epic]));
+
+    // Implementation must remain serialized around the review gate: do not pick
+    // another todo epic while any epic is actively implemented, under review,
+    // or waiting for rework after review feedback.
+    const hasActiveOrReviewingEpic = items.epics.some(
+      (epic) => epic.status === "in-progress" || epic.status === "in-review" || epic.status === "changes-requested",
+    );
+    if (hasActiveOrReviewingEpic) {
+      return null;
+    }
+
     const candidate = items.epics.find((epic) => epic.status === "todo" && isVisible(epic, epicsById));
     if (!candidate) {
       return null;
