@@ -26,6 +26,7 @@ interface FleetctlCommandOptions {
 
 const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
 const PLAYWRIGHT_SERVER_PID_PATH = path.join(".codefleet", "runtime", "playwright-server.pid");
+const DEFAULT_RUNTIME_DIR = path.join(".codefleet", "runtime");
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_EPIC_READY_POLL_INTERVAL_MS = 3_000;
@@ -170,6 +171,23 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         },
         playwrightServerUrl: requestedPlaywrightServerUrl,
       });
+      const staleRecovery = await recoverStaleQueueProcessingFiles();
+      if (staleRecovery.recoveredCount > 0) {
+        emit({
+          ts: new Date().toISOString(),
+          level: "warn",
+          event: "fleet.queue.stale_recovered",
+          recoveredCount: staleRecovery.recoveredCount,
+        });
+      }
+      if (staleRecovery.skippedCount > 0) {
+        emit({
+          ts: new Date().toISOString(),
+          level: "warn",
+          event: "fleet.queue.stale_recovery_partial",
+          skippedCount: staleRecovery.skippedCount,
+        });
+      }
 
       const playwrightServer = await startPlaywrightServer({ host: playwrightHost, port: playwrightPort }, emit);
       const queueWorker = new AgentEventQueueWorkerService();
@@ -513,6 +531,65 @@ interface ShutdownSignalTracker {
 }
 
 type ShutdownSignalAction = "start" | "ignore" | "force_exit";
+
+interface StaleQueueRecoveryResult {
+  recoveredCount: number;
+  skippedCount: number;
+}
+
+export async function recoverStaleQueueProcessingFiles(runtimeDir: string = DEFAULT_RUNTIME_DIR): Promise<StaleQueueRecoveryResult> {
+  const queueAgentsDir = path.join(runtimeDir, "events", "agents");
+  let agentEntries: Array<{ name: string; isDirectory: () => boolean }> = [];
+  try {
+    agentEntries = await fs.readdir(queueAgentsDir, { withFileTypes: true });
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      return { recoveredCount: 0, skippedCount: 0 };
+    }
+    throw error;
+  }
+
+  let recoveredCount = 0;
+  let skippedCount = 0;
+  for (const agentEntry of agentEntries) {
+    if (!agentEntry.isDirectory()) {
+      continue;
+    }
+    const processingDir = path.join(queueAgentsDir, agentEntry.name, "processing");
+    const pendingDir = path.join(queueAgentsDir, agentEntry.name, "pending");
+    let processingFiles: string[] = [];
+    try {
+      processingFiles = (await fs.readdir(processingDir)).filter((entry) => entry.endsWith(".json")).sort();
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+    if (processingFiles.length === 0) {
+      continue;
+    }
+    await fs.mkdir(pendingDir, { recursive: true });
+    for (const fileName of processingFiles) {
+      const sourcePath = path.join(processingDir, fileName);
+      const targetPath = await resolveRecoveredPendingPath(pendingDir, fileName);
+      try {
+        await fs.rename(sourcePath, targetPath);
+        recoveredCount += 1;
+      } catch (error) {
+        const err = error as NodeJS.ErrnoException;
+        if (err.code === "ENOENT") {
+          continue;
+        }
+        skippedCount += 1;
+      }
+    }
+  }
+
+  return { recoveredCount, skippedCount };
+}
 
 export function classifyShutdownSignal(
   tracker: ShutdownSignalTracker,
@@ -865,6 +942,36 @@ async function waitForProcessExit(pid: number, timeoutMs: number): Promise<void>
   }
 }
 
+async function resolveRecoveredPendingPath(pendingDir: string, fileName: string): Promise<string> {
+  const initialPath = path.join(pendingDir, fileName);
+  if (!(await fileExists(initialPath))) {
+    return initialPath;
+  }
+  const extension = path.extname(fileName);
+  const baseName = extension.length > 0 ? fileName.slice(0, -extension.length) : fileName;
+  for (let index = 1; index <= 1000; index += 1) {
+    const recoveredName = `${baseName}.recovered-${Date.now()}-${index}${extension}`;
+    const candidatePath = path.join(pendingDir, recoveredName);
+    if (!(await fileExists(candidatePath))) {
+      return candidatePath;
+    }
+  }
+  throw new Error(`failed to resolve recovered pending path for ${fileName}`);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
 function formatHumanLog(record: object): string {
   const payload = asRecord(record);
   if (!payload) {
@@ -935,6 +1042,16 @@ function humanMessageForEvent(event: string, payload: Record<string, unknown>): 
     const file = typeof payload.file === "string" ? payload.file : "unknown-file";
     const reason = typeof payload.reason === "string" ? payload.reason : "unknown error";
     return `queue message failed agent=${agentId} file=${file} reason=${reason}`;
+  }
+
+  if (event === "fleet.queue.stale_recovered") {
+    const recoveredCount = typeof payload.recoveredCount === "number" ? payload.recoveredCount : 0;
+    return `recovered stale processing messages count=${recoveredCount}`;
+  }
+
+  if (event === "fleet.queue.stale_recovery_partial") {
+    const skippedCount = typeof payload.skippedCount === "number" ? payload.skippedCount : 0;
+    return `stale processing recovery skipped count=${skippedCount}`;
   }
 
   if (event === "fleet.down.requested") {
