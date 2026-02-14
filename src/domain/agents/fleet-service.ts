@@ -165,17 +165,22 @@ export class FleetService {
     const now = new Date().toISOString();
 
     for (const target of targets) {
+      // Capture the current PID before mutating persisted runtime state. The
+      // shutdown signal must target the process that was previously started.
+      const runningRuntime = runtime.agents.find((agent) => agent.id === target.id);
+      const pidToStop = runningRuntime?.pid ?? null;
+
       const runtimeAgent = upsertRuntime(runtime, {
         id: target.id,
         role: target.role,
         status: "stopped",
-        pid: null,
-        cwd: process.cwd(),
-        startedAt: now,
+        pid: pidToStop,
+        cwd: runningRuntime?.cwd ?? process.cwd(),
+        startedAt: runningRuntime?.startedAt ?? now,
         lastHeartbeatAt: now,
       });
 
-      await this.processManager.stop(runtimeAgent.pid);
+      await this.processManager.stop(pidToStop);
       runtimeAgent.status = "stopped";
       runtimeAgent.pid = null;
       runtimeAgent.lastHeartbeatAt = new Date().toISOString();

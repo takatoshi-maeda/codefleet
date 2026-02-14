@@ -27,6 +27,7 @@ const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid")
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_EPIC_READY_POLL_INTERVAL_MS = 3_000;
+const FORCE_EXIT_SIGNAL_ARM_DELAY_MS = 250;
 type LogMode = "human" | "jsonl";
 const ANSI_RESET = "\u001b[0m";
 const ANSI_BOLD = "\u001b[1m";
@@ -401,7 +402,7 @@ async function waitForShutdownSignal(
 
   await new Promise<void>((resolve) => {
     const watchedSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
-    let shuttingDown = false;
+    const shutdownSignalTracker: ShutdownSignalTracker = { requestedAtMs: null };
 
     const cleanup = (): void => {
       polling = false;
@@ -413,17 +414,21 @@ async function waitForShutdownSignal(
     };
 
     const onSignal = (signal: NodeJS.Signals): void => {
-      if (shuttingDown) {
+      const action = classifyShutdownSignal(shutdownSignalTracker, Date.now());
+      if (action === "ignore") {
+        return;
+      }
+
+      if (action === "force_exit") {
         emit({
           ts: new Date().toISOString(),
           level: "warn",
           event: "fleet.down.force_exit",
           signal,
         });
-        process.exit(130);
+        process.exit(exitCodeForSignal(signal));
       }
 
-      shuttingDown = true;
       void (async () => {
         emit({
           ts: new Date().toISOString(),
@@ -467,6 +472,38 @@ async function waitForShutdownSignal(
       process.on(signal, onSignal);
     }
   });
+}
+
+interface ShutdownSignalTracker {
+  requestedAtMs: number | null;
+}
+
+type ShutdownSignalAction = "start" | "ignore" | "force_exit";
+
+export function classifyShutdownSignal(
+  tracker: ShutdownSignalTracker,
+  nowMs: number,
+  armDelayMs: number = FORCE_EXIT_SIGNAL_ARM_DELAY_MS,
+): ShutdownSignalAction {
+  if (tracker.requestedAtMs === null) {
+    tracker.requestedAtMs = nowMs;
+    return "start";
+  }
+
+  // Some terminals/wrappers can fan out duplicate SIGINTs for a single Ctrl+C.
+  // Ignore very-close repeats so graceful down can complete instead of being aborted.
+  if (nowMs - tracker.requestedAtMs < armDelayMs) {
+    return "ignore";
+  }
+
+  return "force_exit";
+}
+
+function exitCodeForSignal(signal: NodeJS.Signals): number {
+  if (signal === "SIGTERM") {
+    return 143;
+  }
+  return 130;
 }
 
 async function prepareDispatchMessage(

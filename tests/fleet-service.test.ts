@@ -113,6 +113,7 @@ describe("FleetService", () => {
     expect(downStatus.sessions).toHaveLength(3);
     expect(downStatus.sessions.every((session) => session.status === "disconnected")).toBe(true);
     expect(processManager.stopped.length).toBe(3);
+    expect(processManager.stopped).toEqual([12345, 12345, 12345]);
   });
 
   it("uses role counts, filters by role and tails logs", async () => {

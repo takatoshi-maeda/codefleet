@@ -31,6 +31,13 @@ let interruptSignal = null;
 const onInterrupt = (signal) => {
   // Keep this wrapper alive so the child can run graceful shutdown handlers and decide exit code.
   interruptSignal = signal;
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  // Explicitly forward the signal so shutdown remains reliable even when only this
+  // wrapper receives SIGINT/SIGTERM (for example when launched under another wrapper).
+  child.kill(signal);
 };
 
 process.on("SIGINT", onInterrupt);
