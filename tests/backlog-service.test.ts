@@ -6,6 +6,56 @@ import { BacklogService } from "../src/domain/backlog/backlog-service.js";
 import { CodefleetError } from "../src/shared/errors.js";
 
 describe("BacklogService", () => {
+  it("appends change history entries to change_logs.jsonl in chronological order", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const changeLogPath = path.join(backlogDir, "change_logs.jsonl");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
+    await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [] });
+
+    const raw = await fs.readFile(changeLogPath, "utf8");
+    const lines = raw
+      .trim()
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map(
+        (line) =>
+          JSON.parse(line) as {
+            id: string;
+            createdAt: string;
+            operation: string;
+            parameters: Record<string, unknown>;
+            actor?: unknown;
+            lines: string[];
+          },
+      );
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]?.id).toMatch(/^CHG-\d{8}-001$/);
+    expect(lines[1]?.id).toMatch(/^CHG-\d{8}-002$/);
+    expect(lines[0]?.createdAt <= lines[1]?.createdAt).toBe(true);
+    expect(lines[0]?.actor).toBeUndefined();
+    expect(lines[0]?.operation).toBe("epic.add");
+    expect(lines[0]?.parameters).toEqual({ title: "epic", acceptanceTestIds: [] });
+    expect(lines[1]?.operation).toBe("item.add");
+    expect(lines[1]?.parameters).toEqual({ epicId: "E-001", title: "item", acceptanceTestIds: [] });
+    expect(lines[0]?.lines).toContain("- epic added: E-001");
+    expect(lines[1]?.lines).toContain("- item added: I-001");
+  });
+
   it("returns ERR_BACKLOG_SNAPSHOT_NOT_STABLE when wait-implementation listing is unstable", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
@@ -39,11 +89,8 @@ describe("BacklogService", () => {
       actorId: "pm-agent",
     });
 
-    const changeLogDir = path.join(backlogDir, "change-logs");
-    const changeLogs = await fs.readdir(changeLogDir);
-    for (const changeLog of changeLogs) {
-      await fs.unlink(path.join(changeLogDir, changeLog));
-    }
+    const changeLogPath = path.join(backlogDir, "change_logs.jsonl");
+    await fs.unlink(changeLogPath);
 
     await expect(service.list({ status: "wait-implementation" })).rejects.toMatchObject<Partial<CodefleetError>>({
       code: "ERR_BACKLOG_SNAPSHOT_NOT_STABLE",

@@ -25,10 +25,10 @@ export async function ensureStableBacklogSnapshot(backlogDir: string): Promise<v
 }
 
 async function latestChangeLogMtime(backlogDir: string): Promise<number> {
-  const changeLogDir = path.join(backlogDir, "change-logs");
-  let files: string[] = [];
+  const changeLogPath = path.join(backlogDir, "change_logs.jsonl");
   try {
-    files = await fs.readdir(changeLogDir);
+    const stat = await fs.stat(changeLogPath);
+    return stat.mtimeMs;
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code === "ENOENT") {
@@ -36,15 +36,4 @@ async function latestChangeLogMtime(backlogDir: string): Promise<number> {
     }
     throw error;
   }
-
-  let latest = 0;
-  for (const file of files) {
-    if (!file.endsWith(".md")) {
-      continue;
-    }
-    const stat = await fs.stat(path.join(changeLogDir, file));
-    latest = Math.max(latest, stat.mtimeMs);
-  }
-
-  return latest;
 }

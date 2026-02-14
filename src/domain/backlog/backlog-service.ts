@@ -23,8 +23,10 @@ import { ensureValidEpicStatusTransition, ensureValidItemStatusTransition } from
 const DEFAULT_BACKLOG_DIR = ".codefleet/data/backlog";
 const DEFAULT_ACCEPTANCE_SPEC_PATH = ".codefleet/data/acceptance-testing/spec.json";
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
+const CHANGE_LOG_JSONL_PATH = "change_logs.jsonl";
 
 type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper" | "Reviewer";
+type JsonLogValue = string | number | boolean | null | JsonLogValue[] | { [key: string]: JsonLogValue };
 
 interface ListInput {
   status?: BacklogEpicStatus | BacklogItemStatus;
@@ -235,7 +237,8 @@ export class BacklogService {
 
     await this.persistWithChangeLog(
       items,
-      await this.resolveRole(actorId),
+      "epic.claim-ready-for-implementation",
+      { actorId },
       [`- epic claimed for implementation: ${candidate.id}`],
     );
     return candidate;
@@ -273,7 +276,7 @@ export class BacklogService {
 
     const epicSummary = updatedEpicIds.length > 0 ? ` (${updatedEpicIds.join(", ")})` : "";
     const itemSummary = updatedItemIds.length > 0 ? ` (${updatedItemIds.join(", ")})` : "";
-    await this.persistWithChangeLog(items, await this.resolveRole(actorId), [
+    await this.persistWithChangeLog(items, "backlog.update-status-all-todo", { actorId }, [
       "- epic/item statuses reset to todo",
       `- epics updated: ${updatedEpicIds.length}${epicSummary}`,
       `- items updated: ${updatedItemIds.length}${itemSummary}`,
@@ -301,7 +304,7 @@ export class BacklogService {
     items.epics.push(epic);
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- epic added: ${epic.id}`]);
+    await this.persistWithChangeLog(items, "epic.add", input, [`- epic added: ${epic.id}`]);
     return epic;
   }
 
@@ -345,7 +348,7 @@ export class BacklogService {
     epic.updatedAt = now;
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- epic updated: ${epic.id}`]);
+    await this.persistWithChangeLog(items, "epic.update", input, [`- epic updated: ${epic.id}`]);
     return epic;
   }
 
@@ -367,7 +370,7 @@ export class BacklogService {
     }
     items.updatedAt = new Date().toISOString();
 
-    await this.persistWithChangeLog(items, await this.resolveRole(actorId), [`- epic deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "epic.delete", { id, force, actorId }, [`- epic deleted: ${id}`]);
   }
 
   async addItem(input: AddItemInput): Promise<BacklogItem> {
@@ -395,7 +398,7 @@ export class BacklogService {
     items.items.push(item);
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- item added: ${item.id}`]);
+    await this.persistWithChangeLog(items, "item.add", input, [`- item added: ${item.id}`]);
     return item;
   }
 
@@ -433,7 +436,7 @@ export class BacklogService {
     item.updatedAt = now;
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- item updated: ${item.id}`]);
+    await this.persistWithChangeLog(items, "item.update", input, [`- item updated: ${item.id}`]);
     return item;
   }
 
@@ -447,7 +450,7 @@ export class BacklogService {
     items.items.splice(index, 1);
     items.updatedAt = new Date().toISOString();
 
-    await this.persistWithChangeLog(items, await this.resolveRole(actorId), [`- item deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "item.delete", { id, actorId }, [`- item deleted: ${id}`]);
   }
 
   async readItem(input: ReadByIdInput): Promise<BacklogItem> {
@@ -476,7 +479,7 @@ export class BacklogService {
     };
     items.questions.push(question);
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- question added: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.add", input, [`- question added: ${question.id}`]);
     return question;
   }
 
@@ -503,7 +506,7 @@ export class BacklogService {
     const now = new Date().toISOString();
     question.updatedAt = now;
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- question updated: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.update", input, [`- question updated: ${question.id}`]);
     return question;
   }
 
@@ -519,7 +522,7 @@ export class BacklogService {
     const now = new Date().toISOString();
     question.updatedAt = now;
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, await this.resolveRole(input.actorId), [`- question answered: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.answer", input, [`- question answered: ${question.id}`]);
     return question;
   }
 
@@ -532,7 +535,7 @@ export class BacklogService {
 
     items.questions.splice(index, 1);
     items.updatedAt = new Date().toISOString();
-    await this.persistWithChangeLog(items, await this.resolveRole(actorId), [`- question deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "question.delete", { id, actorId }, [`- question deleted: ${id}`]);
   }
 
   private async getOrInitializeItems(): Promise<NormalizedBacklogItems> {
@@ -580,38 +583,80 @@ export class BacklogService {
     }
   }
 
-  private async persistWithChangeLog(items: BacklogItems, actor: AgentRole, lines: string[]): Promise<void> {
-    // Keep persistence order explicit: items.json first, then change-log.
+  private async persistWithChangeLog(
+    items: BacklogItems,
+    operation: string,
+    parameters: object,
+    lines: string[],
+  ): Promise<void> {
+    // Keep persistence order explicit: items.json first, then change-log append.
     // If the process crashes between these writes, snapshot guard detects the gap and
     // blocks wait-implementation reads until a complete change-log is present.
     await this.itemsRepository.save(items);
-    await this.writeChangeLog(actor, lines, items.version);
+    await this.writeChangeLog(operation, parameters, lines, items.version);
   }
 
-  private async writeChangeLog(actor: AgentRole, lines: string[], itemsVersion: number): Promise<void> {
-    const changeLogDir = path.join(this.backlogDir, "change-logs");
-    await fs.mkdir(changeLogDir, { recursive: true });
+  private async writeChangeLog(
+    operation: string,
+    parameters: object,
+    lines: string[],
+    itemsVersion: number,
+  ): Promise<void> {
+    await fs.mkdir(this.backlogDir, { recursive: true });
+    const changeLogPath = path.join(this.backlogDir, CHANGE_LOG_JSONL_PATH);
 
     const now = new Date();
-    const changeId = await this.nextChangeLogId(now, changeLogDir);
     const createdAt = now.toISOString();
-    const content = `---\nid: ${changeId}\nactor: ${actor}\ntype: backlog-update\ncreatedAt: ${createdAt}\nitemsJsonVersion: ${itemsVersion}\n---\n\n${lines.join("\n")}\n`;
+    const changeId = await this.nextChangeLogId(now, changeLogPath);
+    const entry = {
+      id: changeId,
+      type: "backlog-update" as const,
+      operation,
+      parameters: sanitizeForJsonLog(parameters),
+      createdAt,
+      itemsJsonVersion: itemsVersion,
+      lines,
+    };
 
-    await fs.writeFile(path.join(changeLogDir, `${changeId}.md`), content, "utf8");
+    await fs.appendFile(changeLogPath, `${JSON.stringify(entry)}\n`, "utf8");
   }
 
-  private async nextChangeLogId(now: Date, changeLogDir: string): Promise<string> {
+  private async nextChangeLogId(now: Date, changeLogPath: string): Promise<string> {
     const stamp = `${now.getUTCFullYear()}${String(now.getUTCMonth() + 1).padStart(2, "0")}${String(
       now.getUTCDate(),
     ).padStart(2, "0")}`;
     const prefix = `CHG-${stamp}-`;
 
-    const files = await fs.readdir(changeLogDir).catch(() => []);
-    const maxSequence = files.reduce((max, file) => {
-      if (!file.endsWith(".md")) {
+    let raw = "";
+    try {
+      raw = await fs.readFile(changeLogPath, "utf8");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    // IDs are monotonic per UTC day. We compute the current max from existing JSONL
+    // so append-only history remains queryable in strict write order.
+    const maxSequence = raw.split("\n").reduce((max, line) => {
+      if (line.trim().length === 0) {
         return max;
       }
-      const name = path.basename(file, ".md");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        // Keep writes resilient if historical rows were hand-edited or partially broken.
+        return max;
+      }
+      if (!parsed || typeof parsed !== "object") {
+        return max;
+      }
+      const name = (parsed as { id?: unknown }).id;
+      if (typeof name !== "string") {
+        return max;
+      }
       if (!name.startsWith(prefix)) {
         return max;
       }
@@ -621,6 +666,23 @@ export class BacklogService {
 
     return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
   }
+}
+
+function sanitizeForJsonLog(value: unknown): JsonLogValue {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => sanitizeForJsonLog(entry));
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, entry]) => [key, sanitizeForJsonLog(entry)]);
+    return Object.fromEntries(entries);
+  }
+  return String(value);
 }
 
 function defaultVisibility(): VisibilityRule {
