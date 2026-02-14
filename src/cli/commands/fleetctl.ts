@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { Command } from "commander";
 import type { AgentRuntime } from "../../domain/agent-runtime-model.js";
@@ -24,9 +25,14 @@ interface FleetctlCommandOptions {
 }
 
 const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
+const PLAYWRIGHT_SERVER_PID_PATH = path.join(".codefleet", "runtime", "playwright-server.pid");
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_EPIC_READY_POLL_INTERVAL_MS = 3_000;
+const DEFAULT_PLAYWRIGHT_HOST = "localhost";
+const DEFAULT_PLAYWRIGHT_PORT = 9333;
+const PLAYWRIGHT_READY_TIMEOUT_MS = 10_000;
+const PLAYWRIGHT_SHUTDOWN_TIMEOUT_MS = 10_000;
 const FORCE_EXIT_SIGNAL_ARM_DELAY_MS = 250;
 type LogMode = "human" | "jsonl";
 const ANSI_RESET = "\u001b[0m";
@@ -105,6 +111,8 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--verbose", "Emit verbose JSONL logs for diagnostics")
     .option("--lang <lang>", "Set response language for newly started event threads")
     .option("--epic-ready-poll-interval-sec <seconds>", "Polling interval for backlog epic ready detection", "3")
+    .option("--playwright-host <host>", "Host to bind playwright run-server", DEFAULT_PLAYWRIGHT_HOST)
+    .option("--playwright-port <port>", "Port to bind playwright run-server", String(DEFAULT_PLAYWRIGHT_PORT))
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
     .option("--reviewers <count>", "Number of Reviewer agents", "1")
@@ -119,6 +127,9 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         options.epicReadyPollIntervalSec,
         "--epic-ready-poll-interval-sec",
       );
+      const playwrightHost = parsePlaywrightHost(options.playwrightHost);
+      const playwrightPort = parsePlaywrightPort(options.playwrightPort);
+      const requestedPlaywrightServerUrl = buildPlaywrightServerUrl(playwrightHost, playwrightPort);
 
       if (Boolean(options.detached)) {
         const detachedPid = await spawnDetachedSupervisorProcess({
@@ -128,6 +139,8 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           verbose: Boolean(options.verbose),
           lang,
           epicReadyPollIntervalMs,
+          playwrightHost,
+          playwrightPort,
         });
         emit({
           ts: requestedAt,
@@ -155,33 +168,46 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           developers,
           reviewers,
         },
+        playwrightServerUrl: requestedPlaywrightServerUrl,
       });
 
-      const status = await service.up({ detached: false, gatekeepers, developers, reviewers, lang });
-      for (const agent of status.agents) {
-        emitAgentRuntimeLog(agent, emit);
-      }
-
-      for (const session of status.sessions) {
-        emitSessionLog(session, emit);
-      }
-
-      emit({
-        ts: new Date().toISOString(),
-        level: "info",
-        event: "fleet.up.completed",
-        summary: status.summary,
-        agentCount: status.agents.length,
-        readySessionCount: status.sessions.filter((session) => session.status === "ready").length,
-      });
-
+      const playwrightServer = await startPlaywrightServer({ host: playwrightHost, port: playwrightPort }, emit);
       const queueWorker = new AgentEventQueueWorkerService();
       const queueService = new AgentEventQueueService();
-      await writeSupervisorPid(process.pid);
       try {
-        await waitForShutdownSignal(service, queueWorker, queueService, emit, epicReadyPollIntervalMs);
+        const status = await service.up({
+          detached: false,
+          gatekeepers,
+          developers,
+          reviewers,
+          lang,
+          playwrightServerUrl: playwrightServer.url,
+        });
+        for (const agent of status.agents) {
+          emitAgentRuntimeLog(agent, emit);
+        }
+
+        for (const session of status.sessions) {
+          emitSessionLog(session, emit);
+        }
+
+        emit({
+          ts: new Date().toISOString(),
+          level: "info",
+          event: "fleet.up.completed",
+          summary: status.summary,
+          agentCount: status.agents.length,
+          readySessionCount: status.sessions.filter((session) => session.status === "ready").length,
+        });
+
+        await writeSupervisorPid(process.pid);
+        try {
+          await waitForShutdownSignal(service, queueWorker, queueService, emit, epicReadyPollIntervalMs);
+        } finally {
+          await removeSupervisorPidFile();
+        }
       } finally {
-        await removeSupervisorPidFile();
+        await stopPlaywrightServer(playwrightServer.pid, emit);
       }
     });
 
@@ -198,6 +224,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           process.kill(supervisorPid, "SIGTERM");
           await waitForProcessExit(supervisorPid, 10_000);
         }
+        await stopPlaywrightServerFromPidFile();
       }
       const status = await service.down({ all: Boolean(options.all), role: options.role as AgentRole | undefined });
       console.log(JSON.stringify(status, null, 2));
@@ -569,6 +596,158 @@ function parsePositivePollIntervalMs(raw: unknown, optionName: string): number {
   return Math.max(1, Math.floor(value * 1_000));
 }
 
+function parsePlaywrightHost(raw: unknown): string {
+  if (typeof raw !== "string") {
+    throw new Error("--playwright-host must be a non-empty string");
+  }
+  const host = raw.trim();
+  if (host.length === 0) {
+    throw new Error("--playwright-host must be a non-empty string");
+  }
+  return host;
+}
+
+function parsePlaywrightPort(raw: unknown): number {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > 65_535) {
+    throw new Error("--playwright-port must be an integer between 1 and 65535");
+  }
+  return value;
+}
+
+function buildPlaywrightServerUrl(host: string, port: number): string {
+  return `http://${host}:${port}`;
+}
+
+interface PlaywrightServerStartResult {
+  pid: number;
+  url: string;
+}
+
+async function startPlaywrightServer(
+  input: { host: string; port: number },
+  emit: (record: object) => void,
+): Promise<PlaywrightServerStartResult> {
+  const existingPid = await readPlaywrightServerPid();
+  if (existingPid && isProcessAlive(existingPid)) {
+    throw new Error(`playwright run-server is already running (pid=${existingPid})`);
+  }
+  if (existingPid) {
+    await removePlaywrightServerPidFile();
+  }
+
+  const child = spawn(resolveNpxCommand(), ["playwright", "run-server", "--host", input.host, "--port", String(input.port)], {
+    stdio: "ignore",
+  });
+  let spawnErrorMessage: string | null = null;
+  child.once("error", (error) => {
+    spawnErrorMessage = error instanceof Error ? error.message : String(error);
+  });
+  const pid = child.pid;
+  if (!pid) {
+    if (spawnErrorMessage) {
+      throw new Error(`failed to start playwright run-server: ${spawnErrorMessage}`);
+    }
+    throw new Error("failed to start playwright run-server: no pid");
+  }
+
+  await writePlaywrightServerPid(pid);
+  const url = buildPlaywrightServerUrl(input.host, input.port);
+  try {
+    await waitForPlaywrightServerReady({ host: input.host, port: input.port }, child, () => spawnErrorMessage);
+  } catch (error) {
+    await stopPlaywrightServer(pid, emit);
+    throw error;
+  }
+
+  emit({
+    ts: new Date().toISOString(),
+    level: "info",
+    event: "fleet.playwright.started",
+    pid,
+    url,
+  });
+  return { pid, url };
+}
+
+async function waitForPlaywrightServerReady(
+  input: { host: string; port: number },
+  child: { exitCode: number | null; signalCode: NodeJS.Signals | null },
+  getSpawnError: () => string | null,
+): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < PLAYWRIGHT_READY_TIMEOUT_MS) {
+    const spawnErrorMessage = getSpawnError();
+    if (spawnErrorMessage) {
+      throw new Error(`failed to spawn playwright run-server: ${spawnErrorMessage}`);
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(
+        `playwright run-server exited before becoming ready (exitCode=${String(child.exitCode)}, signal=${String(child.signalCode)})`,
+      );
+    }
+    const ready = await canConnectToTcpPort(input.host, input.port);
+    if (ready) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out waiting for playwright run-server at ${buildPlaywrightServerUrl(input.host, input.port)}`);
+}
+
+function resolveNpxCommand(): string {
+  return process.platform === "win32" ? "npx.cmd" : "npx";
+}
+
+async function canConnectToTcpPort(host: string, port: number): Promise<boolean> {
+  return await new Promise<boolean>((resolve) => {
+    const socket = net.createConnection({ host, port });
+    let settled = false;
+    const finalize = (value: boolean): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      socket.destroy();
+      resolve(value);
+    };
+    socket.once("connect", () => finalize(true));
+    socket.once("error", () => finalize(false));
+    socket.setTimeout(250, () => finalize(false));
+  });
+}
+
+async function stopPlaywrightServer(pid: number | null, emit?: (record: object) => void): Promise<void> {
+  if (!pid) {
+    await removePlaywrightServerPidFile();
+    return;
+  }
+
+  if (isProcessAlive(pid)) {
+    try {
+      process.kill(pid, "SIGTERM");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== "ESRCH") {
+        throw error;
+      }
+    }
+    await waitForProcessExit(pid, PLAYWRIGHT_SHUTDOWN_TIMEOUT_MS);
+  }
+  await removePlaywrightServerPidFile();
+  emit?.({
+    ts: new Date().toISOString(),
+    level: "info",
+    event: "fleet.playwright.stopped",
+    pid,
+  });
+}
+
+async function stopPlaywrightServerFromPidFile(): Promise<void> {
+  const pid = await readPlaywrightServerPid();
+  await stopPlaywrightServer(pid);
+}
+
 async function spawnDetachedSupervisorProcess(input: {
   gatekeepers: number;
   developers: number;
@@ -576,6 +755,8 @@ async function spawnDetachedSupervisorProcess(input: {
   verbose: boolean;
   lang?: string;
   epicReadyPollIntervalMs: number;
+  playwrightHost: string;
+  playwrightPort: number;
 }): Promise<number | null> {
   const args = [
     process.argv[1],
@@ -596,6 +777,7 @@ async function spawnDetachedSupervisorProcess(input: {
   if (input.epicReadyPollIntervalMs !== DEFAULT_EPIC_READY_POLL_INTERVAL_MS) {
     args.push("--epic-ready-poll-interval-sec", String(input.epicReadyPollIntervalMs / 1_000));
   }
+  args.push("--playwright-host", input.playwrightHost, "--playwright-port", String(input.playwrightPort));
   const child = spawn(process.execPath, args, {
     detached: true,
     stdio: "ignore",
@@ -607,6 +789,11 @@ async function spawnDetachedSupervisorProcess(input: {
 async function writeSupervisorPid(pid: number): Promise<void> {
   await fs.mkdir(path.dirname(SUPERVISOR_PID_PATH), { recursive: true });
   await fs.writeFile(SUPERVISOR_PID_PATH, `${pid}\n`, "utf8");
+}
+
+async function writePlaywrightServerPid(pid: number): Promise<void> {
+  await fs.mkdir(path.dirname(PLAYWRIGHT_SERVER_PID_PATH), { recursive: true });
+  await fs.writeFile(PLAYWRIGHT_SERVER_PID_PATH, `${pid}\n`, "utf8");
 }
 
 async function readSupervisorPid(): Promise<number | null> {
@@ -623,9 +810,34 @@ async function readSupervisorPid(): Promise<number | null> {
   }
 }
 
+async function readPlaywrightServerPid(): Promise<number | null> {
+  try {
+    const raw = await fs.readFile(PLAYWRIGHT_SERVER_PID_PATH, "utf8");
+    const value = Number(raw.trim());
+    return Number.isInteger(value) && value > 0 ? value : null;
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function removeSupervisorPidFile(): Promise<void> {
   try {
     await fs.unlink(SUPERVISOR_PID_PATH);
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ENOENT") {
+      throw error;
+    }
+  }
+}
+
+async function removePlaywrightServerPidFile(): Promise<void> {
+  try {
+    await fs.unlink(PLAYWRIGHT_SERVER_PID_PATH);
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code !== "ENOENT") {
@@ -698,6 +910,17 @@ function humanMessageForEvent(event: string, payload: Record<string, unknown>): 
     const agentCount = typeof payload.agentCount === "number" ? payload.agentCount : 0;
     const readySessions = typeof payload.readySessionCount === "number" ? payload.readySessionCount : 0;
     return `fleet started summary=${summary} agents=${agentCount} readySessions=${readySessions}`;
+  }
+
+  if (event === "fleet.playwright.started") {
+    const pid = typeof payload.pid === "number" ? payload.pid : "unknown";
+    const url = typeof payload.url === "string" ? payload.url : "unknown";
+    return `playwright server started pid=${pid} url=${url}`;
+  }
+
+  if (event === "fleet.playwright.stopped") {
+    const pid = typeof payload.pid === "number" ? payload.pid : "unknown";
+    return `playwright server stopped pid=${pid}`;
   }
 
   if (event === "fleet.queue.consumed") {

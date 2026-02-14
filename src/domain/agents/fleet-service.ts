@@ -43,6 +43,7 @@ export class FleetService {
   private readonly runtimeRepository: JsonRepository<AgentRuntimeCollection>;
   private readonly sessionRepository: JsonRepository<AppServerSessionCollection>;
   private threadResponseLanguage?: string;
+  private reviewerPlaywrightServerUrl?: string;
 
   constructor(
     private readonly rolesPath: string = DEFAULT_ROLES_PATH,
@@ -82,8 +83,10 @@ export class FleetService {
     developers?: number;
     reviewers?: number;
     lang?: string;
+    playwrightServerUrl?: string;
   } = {}): Promise<FleetStatus> {
     this.threadResponseLanguage = normalizeLanguage(input.lang);
+    this.reviewerPlaywrightServerUrl = normalizePlaywrightServerUrl(input.playwrightServerUrl);
     const targets = buildTargetAgents({
       gatekeepers: input.gatekeepers ?? DEFAULT_GATEKEEPER_COUNT,
       developers: input.developers ?? DEFAULT_DEVELOPER_COUNT,
@@ -119,6 +122,7 @@ export class FleetService {
           prompt: startupPrompt,
           cwd: process.cwd(),
           detached: Boolean(input.detached),
+          playwrightServerUrl: target.role === "Reviewer" ? this.reviewerPlaywrightServerUrl : undefined,
         });
         runtimeAgent.pid = processStart.pid;
         runtimeAgent.startedAt = processStart.startedAt;
@@ -345,6 +349,12 @@ export class FleetService {
     // Fail fast on missing template variables so misconfigured event prompts are
     // surfaced during queue handling instead of silently dropping dynamic context.
     const renderedEventPrompt = renderEventPromptTemplate(eventPromptTemplate, promptContext).trim();
+    if (agentRole === "Reviewer" && this.reviewerPlaywrightServerUrl) {
+      const reviewerPlaywrightInstruction =
+        `Playwright remote server endpoint: ${this.reviewerPlaywrightServerUrl}\n` +
+        "Use this endpoint for all browser-based verification in this review.";
+      return `${instructions.trim()}\n\n${reviewerPlaywrightInstruction}\n\n${renderedEventPrompt}`;
+    }
     return `${instructions.trim()}\n\n${renderedEventPrompt}`;
   }
 }
@@ -362,6 +372,14 @@ function normalizeLanguage(lang: string | undefined): string | undefined {
     return undefined;
   }
   const trimmed = lang.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizePlaywrightServerUrl(value: string | undefined): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 

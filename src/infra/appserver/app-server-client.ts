@@ -11,6 +11,7 @@ export interface StartAgentInput {
   prompt: string;
   cwd: string;
   detached: boolean;
+  playwrightServerUrl?: string;
 }
 
 export interface StartAgentResult {
@@ -100,6 +101,7 @@ export class AppServerClient {
         CODEFLEET_AGENT_ID: input.agentId,
         CODEFLEET_AGENT_ROLE: input.role,
         CODEFLEET_ROLE_PROMPT: input.prompt,
+        ...(input.playwrightServerUrl ? { CODEFLEET_PLAYWRIGHT_SERVER_URL: input.playwrightServerUrl } : {}),
       },
     });
     const reader = readline.createInterface({ input: child.stdout });

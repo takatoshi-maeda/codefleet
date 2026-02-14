@@ -23,7 +23,13 @@ class FakeProcessManager {
 }
 
 class FakeAppServerClient {
-  public started: Array<{ agentId: string; role: AgentRole; prompt: string; detached: boolean }> = [];
+  public started: Array<{
+    agentId: string;
+    role: AgentRole;
+    prompt: string;
+    detached: boolean;
+    playwrightServerUrl?: string;
+  }> = [];
   public startedThreads: Array<{ agentId: string; baseInstructions?: string }> = [];
   public startedTurns: Array<{ agentId: string; threadId: string; input: Array<{ type: "text"; text: string }> }> = [];
   public completedTurns: Array<{ agentId: string; threadId: string; turnId: string }> = [];
@@ -34,8 +40,15 @@ class FakeAppServerClient {
     prompt: string;
     cwd: string;
     detached: boolean;
+    playwrightServerUrl?: string;
   }): Promise<FleetProcessStartResult> {
-    this.started.push({ agentId: input.agentId, role: input.role, prompt: input.prompt, detached: input.detached });
+    this.started.push({
+      agentId: input.agentId,
+      role: input.role,
+      prompt: input.prompt,
+      detached: input.detached,
+      playwrightServerUrl: input.playwrightServerUrl,
+    });
     return {
       pid: 12345,
       startedAt: "2026-01-01T00:00:00.000Z",
@@ -232,7 +245,7 @@ describe("FleetService", () => {
       appServer as never,
     );
 
-    await service.up();
+    await service.up({ playwrightServerUrl: "http://127.0.0.1:9333" });
     const emittedEvent = await service.dispatchAgentEvent({
       agentId: "reviewer-1",
       agentRole: "Reviewer",
@@ -240,7 +253,11 @@ describe("FleetService", () => {
     });
 
     expect(emittedEvent).toBeNull();
+    expect(appServer.started.find((entry) => entry.agentId === "reviewer-1")?.playwrightServerUrl).toBe(
+      "http://127.0.0.1:9333",
+    );
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Epic ID to review now: E-456");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Playwright remote server endpoint: http://127.0.0.1:9333");
   });
 
   it("emits backlog.update after orchestrator handles acceptance-test.update", async () => {

@@ -17,6 +17,7 @@ Implementation guidance:
   - Create or update E2E test scripts before or alongside implementation.
   - Re-run E2E tests continuously while developing each Item.
   - Treat Item completion as "code + E2E verification passing" rather than code changes only.
+  - If you write E2E tests with Playwright and `CODEFLEET_PLAYWRIGHT_SERVER_URL` is set, connect to that remote server endpoint and use it for browser-based verification.
 - Keep mocks to the minimum necessary. Prefer real dependencies over mocked layers:
   - For databases (for example PostgreSQL), validate behavior against a real PostgreSQL instance (containerized local environment is preferred), not a mocked DB layer.
   - For middleware and external APIs, call real services (or official sandbox/staging endpoints) during development whenever feasible.
