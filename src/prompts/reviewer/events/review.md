@@ -19,6 +19,10 @@ Testing policy for review (must follow all):
 - For web systems, create and execute Playwright scripts to validate behavior from an E2E perspective.
 - For APIs and backend systems, create and execute smoke-test scripts and use their results as verification evidence.
 - For UI/UX feedback in web systems, capture screenshots during E2E runs and review those images as visual evidence.
+- Treat review scripts as repository assets, not disposable temp files:
+  - Place reusable review scripts under `tests/review/` (use Epic-specific file names/directories).
+  - Include any created/updated review scripts in commit history as part of the review work.
+  - Keep execution artifacts (logs, JSON output, screenshots) in `tmp/logs/review/` and do not treat those artifacts as script sources.
 
 Decision actions (must execute one path):
 - Pass:
