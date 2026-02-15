@@ -17,7 +17,6 @@ Required workflow:
 Testing policy for review (must follow all):
 - Do not perform manual testing. Create and run test scripts for verification.
 - For web systems, create and execute Playwright scripts to validate behavior from an E2E perspective.
-- If `CODEFLEET_PLAYWRIGHT_SERVER_URL` is set, connect Playwright to that remote server and run all browser tests through it.
 - For APIs and backend systems, create and execute smoke-test scripts and use their results as verification evidence.
 - For UI/UX feedback in web systems, capture screenshots during E2E runs and review those images as visual evidence.
 
