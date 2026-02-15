@@ -77,7 +77,7 @@ type RpcNotificationMessage = {
 };
 
 const AGENT_APPROVAL_POLICY = "never";
-const AGENT_SANDBOX_MODE = "workspace-write";
+const AGENT_SANDBOX_MODE = "danger-full-access";
 const AGENT_MODEL = "gpt-5.3-codex";
 const AGENT_REASONING_EFFORT = "xhigh";
 const AGENT_THREAD_NETWORK_ACCESS_DEFAULT = true;
