@@ -41,9 +41,16 @@ interface FleetUpPreflightDependencies {
   emit: (record: object) => void;
 }
 
+interface DockerEnvironmentDependencies {
+  fileExists: (path: string) => Promise<boolean>;
+  readFile: (path: string, encoding: BufferEncoding) => Promise<string>;
+}
+
 const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
 const PLAYWRIGHT_SERVER_PID_PATH = path.join(".codefleet", "runtime", "playwright-server.pid");
 const DEFAULT_RUNTIME_DIR = path.join(".codefleet", "runtime");
+const DOCKER_ENV_FILE_PATH = "/.dockerenv";
+const DOCKER_CGROUP_PATHS = ["/proc/self/cgroup", "/proc/1/cgroup"] as const;
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_EPIC_READY_POLL_INTERVAL_MS = 3_000;
@@ -136,6 +143,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--reviewers <count>", "Number of Reviewer agents", "1")
     .option("--skip-startup-preflight", "Skip internal startup preflight checks", false)
     .action(async (options) => {
+      await assertDockerContainerEnvironment();
       logMode = Boolean(options.verbose) ? "jsonl" : "human";
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
@@ -370,6 +378,44 @@ export async function runFleetUpPreflight(deps: FleetUpPreflightDependencies): P
     level: "warn",
     event: "fleet.preflight.git_reset_hard",
   });
+}
+
+export async function assertDockerContainerEnvironment(
+  deps: DockerEnvironmentDependencies = {
+    fileExists,
+    readFile: fs.readFile,
+  },
+): Promise<void> {
+  const runningInDocker = await isRunningInDockerContainer(deps);
+  if (runningInDocker) {
+    return;
+  }
+  throw new Error("fleet up requires running inside a Docker container.");
+}
+
+export async function isRunningInDockerContainer(deps: DockerEnvironmentDependencies): Promise<boolean> {
+  if (await deps.fileExists(DOCKER_ENV_FILE_PATH)) {
+    return true;
+  }
+
+  // Some runtimes do not expose `/.dockerenv`; use cgroup markers as fallback.
+  for (const cgroupPath of DOCKER_CGROUP_PATHS) {
+    let content = "";
+    try {
+      content = await deps.readFile(cgroupPath, "utf8");
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+    if (/(^|\/)(docker|containerd)(\/|$)/u.test(content)) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function validateTargetSelection(all: boolean, role: AgentRole | undefined, commandName: string): void {
