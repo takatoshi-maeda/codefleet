@@ -245,7 +245,7 @@ export class BacklogService {
       items,
       "epic.claim-ready-for-implementation",
       { actorId },
-      [`- epic claimed for implementation: ${candidate.id}`],
+      `epic claimed for implementation: ${candidate.id}`,
     );
     return candidate;
   }
@@ -282,11 +282,12 @@ export class BacklogService {
 
     const epicSummary = updatedEpicIds.length > 0 ? ` (${updatedEpicIds.join(", ")})` : "";
     const itemSummary = updatedItemIds.length > 0 ? ` (${updatedItemIds.join(", ")})` : "";
-    await this.persistWithChangeLog(items, "backlog.update-status-all-todo", { actorId }, [
-      "- epic/item statuses reset to todo",
-      `- epics updated: ${updatedEpicIds.length}${epicSummary}`,
-      `- items updated: ${updatedItemIds.length}${itemSummary}`,
-    ]);
+    await this.persistWithChangeLog(
+      items,
+      "backlog.update-status-all-todo",
+      { actorId },
+      `epic/item statuses reset to todo; epics updated: ${updatedEpicIds.length}${epicSummary}; items updated: ${updatedItemIds.length}${itemSummary}`,
+    );
     return { updatedEpicIds, updatedItemIds };
   }
 
@@ -322,11 +323,12 @@ export class BacklogService {
 
     const epicSummary = updatedEpicIds.length > 0 ? ` (${updatedEpicIds.join(", ")})` : "";
     const itemSummary = updatedItemIds.length > 0 ? ` (${updatedItemIds.join(", ")})` : "";
-    await this.persistWithChangeLog(items, "backlog.reset-in-progress-to-todo", { actorId }, [
-      "- in-progress epic/item statuses reset to todo",
-      `- epics updated: ${updatedEpicIds.length}${epicSummary}`,
-      `- items updated: ${updatedItemIds.length}${itemSummary}`,
-    ]);
+    await this.persistWithChangeLog(
+      items,
+      "backlog.reset-in-progress-to-todo",
+      { actorId },
+      `in-progress epic/item statuses reset to todo; epics updated: ${updatedEpicIds.length}${epicSummary}; items updated: ${updatedItemIds.length}${itemSummary}`,
+    );
     return { updatedEpicIds, updatedItemIds };
   }
 
@@ -350,7 +352,7 @@ export class BacklogService {
     items.epics.push(epic);
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, "epic.add", input, [`- epic added: ${epic.id}`]);
+    await this.persistWithChangeLog(items, "epic.add", input, `epic added: ${epic.id}`);
     return epic;
   }
 
@@ -394,7 +396,7 @@ export class BacklogService {
     epic.updatedAt = now;
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, "epic.update", input, [`- epic updated: ${epic.id}`]);
+    await this.persistWithChangeLog(items, "epic.update", input, `epic updated: ${epic.id}`);
     return epic;
   }
 
@@ -416,7 +418,7 @@ export class BacklogService {
     }
     items.updatedAt = new Date().toISOString();
 
-    await this.persistWithChangeLog(items, "epic.delete", { id, force, actorId }, [`- epic deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "epic.delete", { id, force, actorId }, `epic deleted: ${id}`);
   }
 
   async addItem(input: AddItemInput): Promise<BacklogItem> {
@@ -444,7 +446,7 @@ export class BacklogService {
     items.items.push(item);
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, "item.add", input, [`- item added: ${item.id}`]);
+    await this.persistWithChangeLog(items, "item.add", input, `item added: ${item.id}`);
     return item;
   }
 
@@ -482,7 +484,7 @@ export class BacklogService {
     item.updatedAt = now;
     items.updatedAt = now;
 
-    await this.persistWithChangeLog(items, "item.update", input, [`- item updated: ${item.id}`]);
+    await this.persistWithChangeLog(items, "item.update", input, `item updated: ${item.id}`);
     return item;
   }
 
@@ -496,7 +498,7 @@ export class BacklogService {
     items.items.splice(index, 1);
     items.updatedAt = new Date().toISOString();
 
-    await this.persistWithChangeLog(items, "item.delete", { id, actorId }, [`- item deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "item.delete", { id, actorId }, `item deleted: ${id}`);
   }
 
   async readItem(input: ReadByIdInput): Promise<BacklogItem> {
@@ -525,7 +527,7 @@ export class BacklogService {
     };
     items.questions.push(question);
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, "question.add", input, [`- question added: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.add", input, `question added: ${question.id}`);
     return question;
   }
 
@@ -552,7 +554,7 @@ export class BacklogService {
     const now = new Date().toISOString();
     question.updatedAt = now;
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, "question.update", input, [`- question updated: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.update", input, `question updated: ${question.id}`);
     return question;
   }
 
@@ -568,7 +570,7 @@ export class BacklogService {
     const now = new Date().toISOString();
     question.updatedAt = now;
     items.updatedAt = now;
-    await this.persistWithChangeLog(items, "question.answer", input, [`- question answered: ${question.id}`]);
+    await this.persistWithChangeLog(items, "question.answer", input, `question answered: ${question.id}`);
     return question;
   }
 
@@ -581,7 +583,7 @@ export class BacklogService {
 
     items.questions.splice(index, 1);
     items.updatedAt = new Date().toISOString();
-    await this.persistWithChangeLog(items, "question.delete", { id, actorId }, [`- question deleted: ${id}`]);
+    await this.persistWithChangeLog(items, "question.delete", { id, actorId }, `question deleted: ${id}`);
   }
 
   private async getOrInitializeItems(): Promise<NormalizedBacklogItems> {
@@ -633,19 +635,19 @@ export class BacklogService {
     items: BacklogItems,
     operation: string,
     parameters: object,
-    lines: string[],
+    fallbackReason: string,
   ): Promise<void> {
     // Keep persistence order explicit: items.json first, then change-log append.
     // If the process crashes between these writes, snapshot guard detects the gap and
     // blocks wait-implementation reads until a complete change-log is present.
     await this.itemsRepository.save(items);
-    await this.writeChangeLog(operation, parameters, lines, items.version);
+    await this.writeChangeLog(operation, parameters, fallbackReason, items.version);
   }
 
   private async writeChangeLog(
     operation: string,
     parameters: object,
-    lines: string[],
+    fallbackReason: string,
     itemsVersion: number,
   ): Promise<void> {
     await fs.mkdir(this.backlogDir, { recursive: true });
@@ -661,7 +663,7 @@ export class BacklogService {
       parameters: sanitizeForJsonLog(parameters),
       createdAt,
       itemsJsonVersion: itemsVersion,
-      lines,
+      reason: this.buildChangeReason(operation, parameters, fallbackReason),
     };
 
     await fs.appendFile(changeLogPath, `${JSON.stringify(entry)}\n`, "utf8");
@@ -711,6 +713,25 @@ export class BacklogService {
     }, 0);
 
     return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
+  }
+
+  private buildChangeReason(operation: string, parameters: object, fallbackReason: string): string {
+    const source = this.resolveChangeTriggerSource(parameters);
+    const reasonFromParameters = (parameters as { reason?: unknown }).reason;
+    if (typeof reasonFromParameters === "string" && reasonFromParameters.trim().length > 0) {
+      return `${reasonFromParameters.trim()} (trigger: ${source})`;
+    }
+    // Keep reason non-empty and always include trigger source so audit readers can
+    // distinguish explicit operator intent from automated/system-originated updates.
+    return `${fallbackReason} (trigger: ${source}, operation: ${operation})`;
+  }
+
+  private resolveChangeTriggerSource(parameters: object): string {
+    const actorId = (parameters as { actorId?: unknown }).actorId;
+    if (typeof actorId === "string" && actorId.trim().length > 0) {
+      return `actor:${actorId.trim()}`;
+    }
+    return "system";
   }
 }
 

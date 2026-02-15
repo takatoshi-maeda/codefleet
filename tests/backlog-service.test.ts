@@ -24,10 +24,10 @@ describe("BacklogService", () => {
 
     const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
     const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
-    await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [] });
+    await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [], actorId: "dev-agent" });
 
     const raw = await fs.readFile(changeLogPath, "utf8");
-    const lines = raw
+    const entries = raw
       .trim()
       .split("\n")
       .filter((line) => line.length > 0)
@@ -39,21 +39,23 @@ describe("BacklogService", () => {
             operation: string;
             parameters: Record<string, unknown>;
             actor?: unknown;
-            lines: string[];
+            reason: string;
           },
       );
 
-    expect(lines).toHaveLength(2);
-    expect(lines[0]?.id).toMatch(/^CHG-\d{8}-001$/);
-    expect(lines[1]?.id).toMatch(/^CHG-\d{8}-002$/);
-    expect(lines[0]?.createdAt <= lines[1]?.createdAt).toBe(true);
-    expect(lines[0]?.actor).toBeUndefined();
-    expect(lines[0]?.operation).toBe("epic.add");
-    expect(lines[0]?.parameters).toEqual({ title: "epic", acceptanceTestIds: [] });
-    expect(lines[1]?.operation).toBe("item.add");
-    expect(lines[1]?.parameters).toEqual({ epicId: "E-001", title: "item", acceptanceTestIds: [] });
-    expect(lines[0]?.lines).toContain("- epic added: E-001");
-    expect(lines[1]?.lines).toContain("- item added: I-001");
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.id).toMatch(/^CHG-\d{8}-001$/);
+    expect(entries[1]?.id).toMatch(/^CHG-\d{8}-002$/);
+    expect(entries[0]?.createdAt <= entries[1]?.createdAt).toBe(true);
+    expect(entries[0]?.actor).toBeUndefined();
+    expect(entries[0]?.operation).toBe("epic.add");
+    expect(entries[0]?.parameters).toEqual({ title: "epic", acceptanceTestIds: [] });
+    expect(entries[1]?.operation).toBe("item.add");
+    expect(entries[1]?.parameters).toEqual({ epicId: "E-001", title: "item", acceptanceTestIds: [], actorId: "dev-agent" });
+    expect(entries[0]?.reason).toContain("epic added: E-001");
+    expect(entries[0]?.reason).toContain("trigger: system");
+    expect(entries[1]?.reason).toContain("item added: I-001");
+    expect(entries[1]?.reason).toContain("trigger: actor:dev-agent");
   });
 
   it("returns ERR_BACKLOG_SNAPSHOT_NOT_STABLE when wait-implementation listing is unstable", async () => {
