@@ -22,6 +22,7 @@ describe("AcceptanceTestService", () => {
       testId: test.id,
       status: "passed",
       summary: "ok",
+      lastExecutionNote: "all happy paths passed",
       executor: "qa",
       artifacts: [],
       logs: [],
@@ -35,6 +36,7 @@ describe("AcceptanceTestService", () => {
 
     expect(savedResult.status).toBe("passed");
     expect(spec.tests[0].lastExecutionStatus).toBe("passed");
+    expect(spec.tests[0].lastExecutionNote).toBe("all happy paths passed");
     expect(spec.tests[0].notes).toEqual(["smoke test notes"]);
   });
 
@@ -70,6 +72,7 @@ describe("AcceptanceTestService", () => {
     await service.selfHealLastExecutionStatus();
     const listed = await service.list();
     expect(listed[0].lastExecutionStatus).toBe("failed");
+    expect(listed[0].lastExecutionNote).toBe("failed");
   });
 
   it("validates forbidden status transitions", async () => {
@@ -169,10 +172,11 @@ describe("AcceptanceTestService", () => {
       logs: [],
     });
 
-    await service.updateLastExecutionStatusAll("failed");
+    await service.updateLastExecutionStatusAll("failed", "forced reset by gatekeeper");
 
     const specRaw = await fs.readFile(path.join(dataDir, "spec.json"), "utf8");
-    const spec = JSON.parse(specRaw) as { tests: Array<{ lastExecutionStatus: string }> };
+    const spec = JSON.parse(specRaw) as { tests: Array<{ lastExecutionStatus: string; lastExecutionNote?: string }> };
     expect(spec.tests.every((test) => test.lastExecutionStatus === "failed")).toBe(true);
+    expect(spec.tests.every((test) => test.lastExecutionNote === "forced reset by gatekeeper")).toBe(true);
   });
 });

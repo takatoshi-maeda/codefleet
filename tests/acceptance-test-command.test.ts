@@ -79,9 +79,57 @@ describe("acceptance-test command", () => {
     await createAcceptanceTestCli().parseAsync(["update-last-execution-status-all", "--status", "failed"], { from: "user" });
 
     expect(updateSpy).toHaveBeenCalledTimes(1);
-    expect(updateSpy).toHaveBeenCalledWith("failed");
+    expect(updateSpy).toHaveBeenCalledWith("failed", undefined);
     expect(healSpy).not.toHaveBeenCalled();
     expect(logSpy).toHaveBeenCalledWith("updated lastExecutionStatus for all acceptance tests: failed");
+  });
+
+  it("passes lastExecutionNote when manually updating lastExecutionStatus for all tests", async () => {
+    const updateSpy = vi.spyOn(AcceptanceTestService.prototype, "updateLastExecutionStatusAll").mockResolvedValue(undefined);
+
+    await createAcceptanceTestCli().parseAsync(
+      ["update-last-execution-status-all", "--status", "passed", "--last-execution-note", "gatekeeper run #12"],
+      { from: "user" },
+    );
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith("passed", "gatekeeper run #12");
+  });
+
+  it("passes lastExecutionNote when adding acceptance-test result", async () => {
+    const addResultSpy = vi.spyOn(AcceptanceTestService.prototype, "addResult").mockResolvedValue({
+      resultId: "ATR-20260216-001",
+      testId: "AT-001",
+      executedAt: "2026-02-16T00:00:00.000Z",
+      executor: "gatekeeper",
+      status: "passed",
+      summary: "ok",
+    });
+
+    await createAcceptanceTestCli().parseAsync(
+      [
+        "result",
+        "add",
+        "--id",
+        "AT-001",
+        "--status",
+        "passed",
+        "--summary",
+        "ok",
+        "--last-execution-note",
+        "ux smooth; all requirements matched",
+      ],
+      { from: "user" },
+    );
+
+    expect(addResultSpy).toHaveBeenCalledTimes(1);
+    expect(addResultSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        testId: "AT-001",
+        status: "passed",
+        lastExecutionNote: "ux smooth; all requirements matched",
+      }),
+    );
   });
 
   it("rejects invalid --status for update-last-execution-status-all", async () => {

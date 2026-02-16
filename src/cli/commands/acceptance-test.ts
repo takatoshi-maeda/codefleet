@@ -48,10 +48,11 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
     .command("update-last-execution-status-all")
     .description("Rebuild lastExecutionStatus cache for all acceptance tests from results history")
     .option("--status <status>", "Manually set all lastExecutionStatus values (not-run|passed|failed)")
-    .action(async (options: { status?: string }) => {
+    .option("--last-execution-note <note>", "Manually set lastExecutionNote for all acceptance tests")
+    .action(async (options: { status?: string; lastExecutionNote?: string }) => {
       const manualStatus = parseExecutionStatusOption(options.status);
       if (manualStatus) {
-        await service.updateLastExecutionStatusAll(manualStatus);
+        await service.updateLastExecutionStatusAll(manualStatus, options.lastExecutionNote);
         console.log(`updated lastExecutionStatus for all acceptance tests: ${manualStatus}`);
         return;
       }
@@ -86,6 +87,7 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
     .option("--add-note <note>", "Append note", collectRepeatable, [])
     .option("--remove-note <note>", "Remove note by exact match", collectRepeatable, [])
     .option("--status <status>", "Status")
+    .option("--last-execution-note <note>", "Set last execution note")
     .option("--epic <epicId>", "Epic IDs (replace)", collectRepeatable)
     .option("--item <itemId>", "Item IDs (replace)", collectRepeatable)
     .action(async (options) => {
@@ -95,6 +97,7 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
         addNotes: options.addNote,
         removeNotes: options.removeNote,
         status: options.status as AcceptanceTestCaseStatus | undefined,
+        lastExecutionNote: options.lastExecutionNote,
         epicIds: options.epic,
         itemIds: options.item,
       });
@@ -136,6 +139,7 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
     .requiredOption("--id <id>", "Acceptance test ID")
     .requiredOption("--status <status>", "Result status")
     .requiredOption("--summary <summary>", "Summary")
+    .option("--last-execution-note <note>", "Execution note stored in spec cache")
     .option("--executor <executor>", "Executor", "manual")
     .option("--duration-ms <durationMs>", "Duration milliseconds")
     .option("--artifact <artifact>", "Artifact path", collectRepeatable, [])
@@ -145,6 +149,7 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
         testId: options.id,
         status: options.status as AcceptanceTestExecutionStatus,
         summary: options.summary,
+        lastExecutionNote: options.lastExecutionNote,
         executor: options.executor,
         durationMs: options.durationMs ? Number(options.durationMs) : undefined,
         artifacts: options.artifact,
@@ -253,10 +258,11 @@ function buildAgentUsageHelp(executableName: string): string {
     "- Use case: Record verification outcomes and maintain evidence.",
     "- Recommended usage:",
     "  - Record pass/fail results with concise summaries and artifact paths.",
+    "  - Store final execution judgment in lastExecutionNote for auditability.",
     "  - Keep logs and artifacts linked for traceability and audits.",
     "- Key commands:",
     "```bash",
-    `${executableName} result add --id AT-001 --status passed --summary "..." --artifact path/to/report`,
+    `${executableName} result add --id AT-001 --status passed --summary "..." --last-execution-note "..." --artifact path/to/report`,
     "```",
   ].join("\n");
 }

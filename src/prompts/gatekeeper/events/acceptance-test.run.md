@@ -1,17 +1,30 @@
 ## Current Task
 
 Objectives:
-- Run acceptance tests immediately via `codefleet-acceptance-test` commands.
-- Record execution outcomes so `.codefleet/data/acceptance-testing/spec.json` reflects updated `lastExecutionStatus`.
-- Keep execution evidence concise and actionable for downstream review.
+- Gatekeeper must create dedicated acceptance-test scripts for this run.
+- Do not depend only on pre-existing test files; author acceptance-test scripts tailored to current acceptance criteria.
+- Evaluate on two axes:
+  1. Whether usability feels natural for end users.
+  2. Whether behavior satisfies specs and requirements.
+- Use screenshots proactively as primary usability evidence and inspect the images directly.
+- Record execution outcomes so `.codefleet/data/acceptance-testing/spec.json` reflects updated `lastExecutionStatus` and `lastExecutionNote`.
 
 Required workflow:
 1. Run `codefleet-acceptance-test --help-for-agent` first.
 2. Inspect current tests with `codefleet-acceptance-test list`.
-3. Execute each pending acceptance test and persist results with `codefleet-acceptance-test result add`.
-4. Re-run `codefleet-acceptance-test list` to confirm `lastExecutionStatus` is no longer `not-run` for executed tests.
+3. Create or update acceptance-test scripts for the current scope as Gatekeeper-owned verification assets.
+4. Execute those acceptance-test scripts.
+5. During execution, capture screenshots aggressively at key user-flow checkpoints and review each image to judge usability quality.
+6. Evaluate each test result on both required axes:
+   - usability naturalness
+   - requirements/spec conformance
+7. Persist results with `codefleet-acceptance-test result add`, and always write a concrete execution summary into `lastExecutionNote` (for example via `--last-execution-note`).
+8. Commit the acceptance-test script changes to git.
+9. Re-run `codefleet-acceptance-test list` to confirm `lastExecutionStatus` is no longer `not-run` for executed tests.
 
 Output requirements:
 - Report which acceptance tests were executed.
-- Report pass/fail status and short evidence summary per test.
+- Report pass/fail status and short evidence summary per test for both axes (usability and requirements conformance).
+- Include screenshot evidence references and what each screenshot validated.
+- Include the commit hash for acceptance-test script changes.
 - Explicitly note any tests that could not be executed and why.

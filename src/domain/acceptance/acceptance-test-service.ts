@@ -28,6 +28,7 @@ interface UpdateAcceptanceTestInput {
   addNotes?: string[];
   removeNotes?: string[];
   status?: AcceptanceTestCaseStatus;
+  lastExecutionNote?: string;
   epicIds?: string[];
   itemIds?: string[];
 }
@@ -36,6 +37,7 @@ interface AddAcceptanceResultInput {
   testId: string;
   status: AcceptanceTestExecutionStatus;
   summary: string;
+  lastExecutionNote?: string;
   executor: string;
   durationMs?: number;
   artifacts: string[];
@@ -114,6 +116,10 @@ export class AcceptanceTestService {
       found.itemIds = unique(input.itemIds);
     }
 
+    if (input.lastExecutionNote !== undefined) {
+      found.lastExecutionNote = input.lastExecutionNote;
+    }
+
     const now = new Date().toISOString();
     found.updatedAt = now;
     spec.updatedAt = now;
@@ -165,6 +171,8 @@ export class AcceptanceTestService {
     await resultRepository.save(result);
 
     target.lastExecutionStatus = result.status;
+    // Keep the cache-level execution note aligned with the latest persisted result context.
+    target.lastExecutionNote = input.lastExecutionNote ?? input.summary;
     const isoNow = now.toISOString();
     target.updatedAt = isoNow;
     spec.updatedAt = isoNow;
@@ -198,6 +206,12 @@ export class AcceptanceTestService {
         test.lastExecutionStatus = newStatus;
         test.updatedAt = new Date().toISOString();
       }
+      const nextNote = latest?.note;
+      if (test.lastExecutionNote !== nextNote) {
+        changed = true;
+        test.lastExecutionNote = nextNote;
+        test.updatedAt = new Date().toISOString();
+      }
     }
 
     if (changed) {
@@ -206,18 +220,22 @@ export class AcceptanceTestService {
     }
   }
 
-  async updateLastExecutionStatusAll(status: AcceptanceTestExecutionStatus): Promise<void> {
+  async updateLastExecutionStatusAll(status: AcceptanceTestExecutionStatus, lastExecutionNote?: string): Promise<void> {
     const spec = await this.getOrInitializeSpec();
     const now = new Date().toISOString();
     let changed = false;
 
     for (const test of spec.tests) {
-      if (test.lastExecutionStatus === status) {
-        continue;
+      if (test.lastExecutionStatus !== status) {
+        changed = true;
+        test.lastExecutionStatus = status;
+        test.updatedAt = now;
       }
-      changed = true;
-      test.lastExecutionStatus = status;
-      test.updatedAt = now;
+      if (lastExecutionNote !== undefined && test.lastExecutionNote !== lastExecutionNote) {
+        changed = true;
+        test.lastExecutionNote = lastExecutionNote;
+        test.updatedAt = now;
+      }
     }
 
     if (!changed) {
@@ -277,9 +295,13 @@ export class AcceptanceTestService {
     return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
   }
 
-  private async latestResultStatuses(): Promise<Map<string, { status: AcceptanceTestExecutionStatus; executedAt: string }>> {
+  private async latestResultStatuses(): Promise<Map<string, {
+    status: AcceptanceTestExecutionStatus;
+    executedAt: string;
+    note: string;
+  }>> {
     const files = await this.resultFiles();
-    const latest = new Map<string, { status: AcceptanceTestExecutionStatus; executedAt: string }>();
+    const latest = new Map<string, { status: AcceptanceTestExecutionStatus; executedAt: string; note: string }>();
 
     for (const file of files) {
       const fullPath = path.join(this.resultsDir, file);
@@ -292,7 +314,7 @@ export class AcceptanceTestService {
       const existing = latest.get(result.testId);
       // `executedAt` is ISO8601 UTC, so lexical comparison is stable and cheaper than Date parse.
       if (!existing || result.executedAt > existing.executedAt) {
-        latest.set(result.testId, { status: result.status, executedAt: result.executedAt });
+        latest.set(result.testId, { status: result.status, executedAt: result.executedAt, note: result.summary });
       }
     }
 

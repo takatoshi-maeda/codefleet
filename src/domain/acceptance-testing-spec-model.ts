@@ -8,6 +8,7 @@ export interface AcceptanceTestCase {
   notes?: string[];
   status: AcceptanceTestCaseStatus;
   lastExecutionStatus: AcceptanceTestExecutionStatus;
+  lastExecutionNote?: string;
   epicIds: string[];
   itemIds: string[];
   updatedAt: string;
