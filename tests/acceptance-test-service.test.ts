@@ -38,7 +38,7 @@ describe("AcceptanceTestService", () => {
     expect(spec.tests[0].notes).toEqual(["smoke test notes"]);
   });
 
-  it("self-heals cached status from latest result json", async () => {
+  it("self-heals cached status from latest result json when explicitly requested", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
     const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
     const service = new AcceptanceTestService(dataDir);
@@ -67,6 +67,7 @@ describe("AcceptanceTestService", () => {
       "utf8",
     );
 
+    await service.selfHealLastExecutionStatus();
     const listed = await service.list();
     expect(listed[0].lastExecutionStatus).toBe("failed");
   });
@@ -142,5 +143,36 @@ describe("AcceptanceTestService", () => {
 
     await expect(fs.access(path.join(dataDir, "spec.json"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(fs.access(path.join(dataDir, "results"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("manually updates lastExecutionStatus for all tests", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
+    const service = new AcceptanceTestService(dataDir);
+
+    await service.add({
+      title: "manual status 1",
+      epicIds: ["E-006"],
+      itemIds: ["I-006"],
+    });
+    const second = await service.add({
+      title: "manual status 2",
+      epicIds: ["E-007"],
+      itemIds: ["I-007"],
+    });
+    await service.addResult({
+      testId: second.id,
+      status: "passed",
+      summary: "ok",
+      executor: "qa",
+      artifacts: [],
+      logs: [],
+    });
+
+    await service.updateLastExecutionStatusAll("failed");
+
+    const specRaw = await fs.readFile(path.join(dataDir, "spec.json"), "utf8");
+    const spec = JSON.parse(specRaw) as { tests: Array<{ lastExecutionStatus: string }> };
+    expect(spec.tests.every((test) => test.lastExecutionStatus === "failed")).toBe(true);
   });
 });

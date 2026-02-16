@@ -60,4 +60,33 @@ describe("acceptance-test command", () => {
     expect(output).toContain("E-001");
     expect(output).toContain("I-001, I-002");
   });
+
+  it("updates lastExecutionStatus cache for all tests", async () => {
+    const healSpy = vi.spyOn(AcceptanceTestService.prototype, "selfHealLastExecutionStatus").mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createAcceptanceTestCli().parseAsync(["update-last-execution-status-all"], { from: "user" });
+
+    expect(healSpy).toHaveBeenCalledTimes(1);
+    expect(logSpy).toHaveBeenCalledWith("updated lastExecutionStatus for all acceptance tests from results.");
+  });
+
+  it("manually updates lastExecutionStatus for all tests with --status", async () => {
+    const updateSpy = vi.spyOn(AcceptanceTestService.prototype, "updateLastExecutionStatusAll").mockResolvedValue(undefined);
+    const healSpy = vi.spyOn(AcceptanceTestService.prototype, "selfHealLastExecutionStatus").mockResolvedValue(undefined);
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createAcceptanceTestCli().parseAsync(["update-last-execution-status-all", "--status", "failed"], { from: "user" });
+
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+    expect(updateSpy).toHaveBeenCalledWith("failed");
+    expect(healSpy).not.toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledWith("updated lastExecutionStatus for all acceptance tests: failed");
+  });
+
+  it("rejects invalid --status for update-last-execution-status-all", async () => {
+    await expect(
+      createAcceptanceTestCli().parseAsync(["update-last-execution-status-all", "--status", "unknown"], { from: "user" }),
+    ).rejects.toThrow("invalid --status: unknown. Expected one of: not-run, passed, failed");
+  });
 });

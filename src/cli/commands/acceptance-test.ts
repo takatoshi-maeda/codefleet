@@ -45,6 +45,21 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
     });
 
   cmd
+    .command("update-last-execution-status-all")
+    .description("Rebuild lastExecutionStatus cache for all acceptance tests from results history")
+    .option("--status <status>", "Manually set all lastExecutionStatus values (not-run|passed|failed)")
+    .action(async (options: { status?: string }) => {
+      const manualStatus = parseExecutionStatusOption(options.status);
+      if (manualStatus) {
+        await service.updateLastExecutionStatusAll(manualStatus);
+        console.log(`updated lastExecutionStatus for all acceptance tests: ${manualStatus}`);
+        return;
+      }
+      await service.selfHealLastExecutionStatus();
+      console.log("updated lastExecutionStatus for all acceptance tests from results.");
+    });
+
+  cmd
     .command("add")
     .description("Add an acceptance test")
     .requiredOption("--title <title>", "Title")
@@ -143,6 +158,16 @@ export function createAcceptanceTestCommand(options: AcceptanceTestCommandOption
 
 function collectRepeatable(value: string, previous: string[] = []): string[] {
   return [...previous, value];
+}
+
+function parseExecutionStatusOption(value: string | undefined): AcceptanceTestExecutionStatus | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === "not-run" || value === "passed" || value === "failed") {
+    return value;
+  }
+  throw new Error(`invalid --status: ${value}. Expected one of: not-run, passed, failed`);
 }
 
 function formatAcceptanceTestsAsTable(tests: ReadonlyArray<{

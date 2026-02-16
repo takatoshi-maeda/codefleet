@@ -57,10 +57,8 @@ export class AcceptanceTestService {
   }
 
   async list(): Promise<AcceptanceTestCase[]> {
-    // `results/*.json` is the canonical execution history and `spec.json` is a cache view.
-    // We heal at read-time so list callers always observe the latest status even if a
-    // previous write failed between result persistence and spec cache update.
-    await this.selfHealLastExecutionStatus();
+    // list() intentionally returns cached spec state as-is. Manual bulk updates
+    // must remain visible without being overwritten by an implicit heal pass.
     const spec = await this.getOrInitializeSpec();
     return spec.tests;
   }
@@ -206,6 +204,27 @@ export class AcceptanceTestService {
       spec.updatedAt = new Date().toISOString();
       await this.specRepository.save(spec);
     }
+  }
+
+  async updateLastExecutionStatusAll(status: AcceptanceTestExecutionStatus): Promise<void> {
+    const spec = await this.getOrInitializeSpec();
+    const now = new Date().toISOString();
+    let changed = false;
+
+    for (const test of spec.tests) {
+      if (test.lastExecutionStatus === status) {
+        continue;
+      }
+      changed = true;
+      test.lastExecutionStatus = status;
+      test.updatedAt = now;
+    }
+
+    if (!changed) {
+      return;
+    }
+    spec.updatedAt = now;
+    await this.specRepository.save(spec);
   }
 
   private async getOrInitializeSpec(): Promise<AcceptanceTestingSpec> {
