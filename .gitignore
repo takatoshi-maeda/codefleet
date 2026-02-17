@@ -8,3 +8,4 @@ tmp
 .github-user
 .zsh_history
 devcontainer.local.json
+.env*
