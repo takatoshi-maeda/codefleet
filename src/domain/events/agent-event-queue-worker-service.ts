@@ -122,6 +122,7 @@ async function validateQueueMessage(filePath: string): Promise<AgentEventQueueMe
   if (
     message.agentRole !== "Orchestrator" &&
     message.agentRole !== "Developer" &&
+    message.agentRole !== "Polisher" &&
     message.agentRole !== "Gatekeeper" &&
     message.agentRole !== "Reviewer"
   ) {
@@ -139,17 +140,23 @@ async function validateQueueMessage(filePath: string): Promise<AgentEventQueueMe
     message.event.type !== "acceptance-test.required" &&
     message.event.type !== "backlog.update" &&
     message.event.type !== "backlog.epic.ready" &&
+    message.event.type !== "backlog.epic.polish.ready" &&
     message.event.type !== "backlog.epic.review.ready" &&
     message.event.type !== "debug.playwright-test"
   ) {
     throw new Error("queue message.event.type must be a known SystemEvent");
   }
   if (
-    (message.event.type === "backlog.epic.ready" || message.event.type === "backlog.epic.review.ready") &&
+    (message.event.type === "backlog.epic.ready" ||
+      message.event.type === "backlog.epic.polish.ready" ||
+      message.event.type === "backlog.epic.review.ready") &&
     message.event.epicId !== undefined &&
     typeof message.event.epicId !== "string"
   ) {
     throw new Error("queue message.event.epicId must be string for epic-scoped events");
+  }
+  if (message.event.type === "backlog.epic.polish.ready" && (!message.event.epicId || message.event.epicId.length === 0)) {
+    throw new Error("queue message.event.epicId is required for backlog.epic.polish.ready");
   }
   if (message.event.type === "backlog.epic.review.ready" && (!message.event.epicId || message.event.epicId.length === 0)) {
     throw new Error("queue message.event.epicId is required for backlog.epic.review.ready");

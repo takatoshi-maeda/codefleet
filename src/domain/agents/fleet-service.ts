@@ -22,6 +22,7 @@ const DEFAULT_LOG_DIR = ".codefleet/logs/agents";
 const DEFAULT_HOOKS_PATH = ".codefleet/hooks.json";
 const DEFAULT_GATEKEEPER_COUNT = 1;
 const DEFAULT_DEVELOPER_COUNT = 1;
+const DEFAULT_DESIGNER_COUNT = 1;
 const DEFAULT_REVIEWER_COUNT = 1;
 const FIXED_ORCHESTRATOR_COUNT = 1;
 
@@ -86,6 +87,7 @@ export class FleetService {
     detached?: boolean;
     gatekeepers?: number;
     developers?: number;
+    polishers?: number;
     reviewers?: number;
     lang?: string;
     playwrightServerUrl?: string;
@@ -95,6 +97,7 @@ export class FleetService {
     const targets = buildTargetAgents({
       gatekeepers: input.gatekeepers ?? DEFAULT_GATEKEEPER_COUNT,
       developers: input.developers ?? DEFAULT_DEVELOPER_COUNT,
+      polishers: input.polishers ?? DEFAULT_DESIGNER_COUNT,
       reviewers: input.reviewers ?? DEFAULT_REVIEWER_COUNT,
     });
     const runtime = await this.getOrInitializeRuntime();
@@ -219,6 +222,7 @@ export class FleetService {
     detached?: boolean;
     gatekeepers?: number;
     developers?: number;
+    polishers?: number;
     reviewers?: number;
   }): Promise<FleetStatus> {
     await this.down({ all: true });
@@ -451,7 +455,7 @@ function parseRoleHooksByAgentRole(value: unknown): RoleHooksByAgentRole {
   const candidate = isRecord(value.roles) ? value.roles : value;
   const parsed: RoleHooksByAgentRole = {};
 
-  for (const role of ["Orchestrator", "Developer", "Gatekeeper", "Reviewer"] as const) {
+  for (const role of ["Orchestrator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const) {
     const roleValue = candidate[role];
     if (roleValue === undefined) {
       continue;
@@ -533,14 +537,27 @@ function buildFollowUpEvent(nextEventType: SystemEvent["type"], sourceEvent: Sys
     return { type: "backlog.update" };
   }
   if (nextEventType === "backlog.epic.review.ready") {
+    const epicId =
+      sourceEvent.type === "backlog.epic.ready" || sourceEvent.type === "backlog.epic.polish.ready"
+        ? sourceEvent.epicId
+        : undefined;
+    if (!epicId) {
+      throw new CodefleetError(
+        "ERR_VALIDATION",
+        "cannot emit backlog.epic.review.ready without epicId from source backlog.epic.ready/backlog.epic.polish.ready event",
+      );
+    }
+    return { type: "backlog.epic.review.ready", epicId };
+  }
+  if (nextEventType === "backlog.epic.polish.ready") {
     const epicId = sourceEvent.type === "backlog.epic.ready" ? sourceEvent.epicId : undefined;
     if (!epicId) {
       throw new CodefleetError(
         "ERR_VALIDATION",
-        "cannot emit backlog.epic.review.ready without epicId from source backlog.epic.ready event",
+        "cannot emit backlog.epic.polish.ready without epicId from source backlog.epic.ready event",
       );
     }
-    return { type: "backlog.epic.review.ready", epicId };
+    return { type: "backlog.epic.polish.ready", epicId };
   }
   if (nextEventType === "debug.playwright-test") {
     return { type: "debug.playwright-test" };
@@ -560,18 +577,21 @@ interface TargetAgent {
 interface RoleCountInput {
   gatekeepers: number;
   developers: number;
+  polishers: number;
   reviewers: number;
 }
 
 function buildTargetAgents(counts: RoleCountInput): TargetAgent[] {
   validateRoleCount("gatekeepers", counts.gatekeepers);
   validateRoleCount("developers", counts.developers);
+  validateRoleCount("polishers", counts.polishers);
   validateRoleCount("reviewers", counts.reviewers);
 
   const targets = [
     ...buildAgentsByRole("Orchestrator", "orchestrator", FIXED_ORCHESTRATOR_COUNT),
     ...buildAgentsByRole("Gatekeeper", "gatekeeper", counts.gatekeepers),
     ...buildAgentsByRole("Developer", "developer", counts.developers),
+    ...buildAgentsByRole("Polisher", "polisher", counts.polishers),
     ...buildAgentsByRole("Reviewer", "reviewer", counts.reviewers),
   ];
   return targets;

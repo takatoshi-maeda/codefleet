@@ -15,6 +15,7 @@ describe("backlog command", () => {
     const output = logSpy.mock.calls.map(([line]) => String(line)).join("\n");
     expect(output).toContain("Orchestrator");
     expect(output).toContain("Developer");
+    expect(output).toContain("Polisher");
     expect(output).toContain("Gatekeeper");
     expect(output).toContain("codefleet-backlog epic add");
     expect(output).toContain("codefleet-backlog item update");

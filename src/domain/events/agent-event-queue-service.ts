@@ -63,8 +63,11 @@ export class AgentEventQueueService {
     event: SystemEvent,
     runningAgents: AgentRuntimeCollection["agents"],
   ): Promise<AgentRuntimeCollection["agents"]> {
-    const serializedRoleByEventType: Partial<Record<SystemEvent["type"], "Developer" | "Reviewer" | "Gatekeeper">> = {
+    const serializedRoleByEventType: Partial<
+      Record<SystemEvent["type"], "Developer" | "Polisher" | "Reviewer" | "Gatekeeper">
+    > = {
       "backlog.epic.ready": "Developer",
+      "backlog.epic.polish.ready": "Polisher",
       "backlog.epic.review.ready": "Reviewer",
       "acceptance-test.required": "Gatekeeper",
     };

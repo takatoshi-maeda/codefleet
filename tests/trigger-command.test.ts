@@ -47,6 +47,7 @@ describe("trigger command", () => {
     expect(output).toContain("acceptance-test.required");
     expect(output).toContain("backlog.update");
     expect(output).toContain("backlog.epic.ready");
+    expect(output).toContain("backlog.epic.polish.ready");
     expect(output).toContain("backlog.epic.review.ready");
     expect(output).toContain("debug.playwright-test");
     expect(output).toContain("--paths <path> (repeatable/comma-separated)");
@@ -169,6 +170,20 @@ describe("trigger command", () => {
 
     expect(router.events).toEqual([{ type: "backlog.epic.review.ready", epicId: "E-123" }]);
     expect(queue.events).toEqual([{ type: "backlog.epic.review.ready", epicId: "E-123" }]);
+    expect(logSpy).toHaveBeenCalled();
+  });
+
+  it("builds backlog.epic.polish.ready event with --epic-id", async () => {
+    const router = new RecordingRouter();
+    const queue = new RecordingQueue();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createTriggerCommand({ router, queue }).parseAsync(["backlog.epic.polish.ready", "--epic-id", "E-222"], {
+      from: "user",
+    });
+
+    expect(router.events).toEqual([{ type: "backlog.epic.polish.ready", epicId: "E-222" }]);
+    expect(queue.events).toEqual([{ type: "backlog.epic.polish.ready", epicId: "E-222" }]);
     expect(logSpy).toHaveBeenCalled();
   });
 

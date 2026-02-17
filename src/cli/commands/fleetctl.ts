@@ -66,6 +66,7 @@ const ROLE_COLOR_BY_PREFIX: Record<string, string> = {
   orchestrator: "\u001b[36m",
   gatekeeper: "\u001b[33m",
   developer: "\u001b[32m",
+  polisher: "\u001b[34m",
 };
 
 export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Command {
@@ -140,6 +141,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--playwright-port <port>", "Port to bind playwright run-server", String(DEFAULT_PLAYWRIGHT_PORT))
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
+    .option("--polishers <count>", "Number of Polisher agents", "1")
     .option("--reviewers <count>", "Number of Reviewer agents", "1")
     .option("--skip-startup-preflight", "Skip internal startup preflight checks", false)
     .action(async (options) => {
@@ -148,6 +150,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
       const developers = Number(options.developers);
+      const polishers = Number(options.polishers);
       const reviewers = Number(options.reviewers);
       const lang = typeof options.lang === "string" ? options.lang : undefined;
       const epicReadyPollIntervalMs = parsePositivePollIntervalMs(
@@ -176,6 +179,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         const detachedPid = await spawnDetachedSupervisorProcess({
           gatekeepers,
           developers,
+          polishers,
           reviewers,
           verbose: Boolean(options.verbose),
           lang,
@@ -192,6 +196,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
             orchestrators: 1,
             gatekeepers,
             developers,
+            polishers,
             reviewers,
           },
         });
@@ -207,6 +212,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           orchestrators: 1,
           gatekeepers,
           developers,
+          polishers,
           reviewers,
         },
         playwrightServerUrl: requestedPlaywrightServerUrl,
@@ -235,6 +241,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         detached: false,
         gatekeepers,
         developers,
+        polishers,
         reviewers,
         lang,
         // Do not auto-start playwright run-server from fleetctl up. The URL can still
@@ -291,12 +298,14 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("-d, --detached", "Run in background")
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
     .option("--developers <count>", "Number of Developer agents", "1")
+    .option("--polishers <count>", "Number of Polisher agents", "1")
     .option("--reviewers <count>", "Number of Reviewer agents", "1")
     .action(async (options) => {
       const status = await service.restart({
         detached: Boolean(options.detached),
         gatekeepers: Number(options.gatekeepers),
         developers: Number(options.developers),
+        polishers: Number(options.polishers),
         reviewers: Number(options.reviewers),
       });
       console.log(JSON.stringify(status, null, 2));
@@ -1041,6 +1050,7 @@ async function stopPlaywrightServerFromPidFile(): Promise<void> {
 async function spawnDetachedSupervisorProcess(input: {
   gatekeepers: number;
   developers: number;
+  polishers: number;
   reviewers: number;
   verbose: boolean;
   lang?: string;
@@ -1055,6 +1065,8 @@ async function spawnDetachedSupervisorProcess(input: {
     String(input.gatekeepers),
     "--developers",
     String(input.developers),
+    "--polishers",
+    String(input.polishers),
     "--reviewers",
     String(input.reviewers),
   ];

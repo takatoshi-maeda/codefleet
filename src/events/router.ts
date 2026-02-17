@@ -6,6 +6,7 @@ export type SystemEvent =
   | { type: "acceptance-test.required" }
   | { type: "backlog.update" }
   | { type: "backlog.epic.ready"; epicId?: string }
+  | { type: "backlog.epic.polish.ready"; epicId: string }
   | { type: "backlog.epic.review.ready"; epicId: string }
   | { type: "debug.playwright-test" };
 
@@ -15,6 +16,7 @@ export const SYSTEM_EVENT_TYPES: ReadonlyArray<SystemEvent["type"]> = [
   "acceptance-test.required",
   "backlog.update",
   "backlog.epic.ready",
+  "backlog.epic.polish.ready",
   "backlog.epic.review.ready",
   "debug.playwright-test",
 ];
@@ -92,6 +94,25 @@ export const SYSTEM_EVENT_COMMAND_DEFINITIONS: Record<SystemEvent["type"], Syste
         ? parsedOptions.epicId
         : undefined;
       return { type: "backlog.epic.ready", epicId };
+    },
+  },
+  "backlog.epic.polish.ready": {
+    description: "SystemEvent.type=backlog.epic.polish.ready",
+    options: [
+      {
+        key: "epicId",
+        flags: "--epic-id <epicId>",
+        description: "Epic id to polish for UI quality",
+        required: true,
+        summaryToken: "--epic-id <epicId>",
+      },
+    ],
+    createEvent(parsedOptions) {
+      const epicId = typeof parsedOptions.epicId === "string" ? parsedOptions.epicId.trim() : "";
+      if (epicId.length === 0) {
+        throw new Error("backlog.epic.polish.ready: --epic-id must be non-empty");
+      }
+      return { type: "backlog.epic.polish.ready", epicId };
     },
   },
   "backlog.epic.review.ready": {

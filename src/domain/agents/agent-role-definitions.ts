@@ -36,6 +36,15 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
     subscribedEvents: {
       "backlog.epic.ready": {
         triggerEvent: "implementation",
+        emitEvent: "backlog.epic.polish.ready",
+      },
+    },
+  },
+  Polisher: {
+    role: "Polisher",
+    subscribedEvents: {
+      "backlog.epic.polish.ready": {
+        triggerEvent: "polishing",
         emitEvent: "backlog.epic.review.ready",
       },
     },

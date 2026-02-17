@@ -9,6 +9,7 @@ describe("agent-role-definitions", () => {
   it("keeps event subscriptions by role", () => {
     expect(getAgentRoleDefinition("Orchestrator").role).toBe("Orchestrator");
     expect(getAgentRoleDefinition("Developer").role).toBe("Developer");
+    expect(getAgentRoleDefinition("Polisher").role).toBe("Polisher");
     expect(getAgentRoleDefinition("Gatekeeper").role).toBe("Gatekeeper");
     expect(getAgentRoleDefinition("Reviewer").role).toBe("Reviewer");
 
@@ -16,6 +17,7 @@ describe("agent-role-definitions", () => {
     expect(isRoleSubscribedToEvent("Developer", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "acceptance-test.update" })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "backlog.epic.ready" })).toBe(true);
+    expect(isRoleSubscribedToEvent("Polisher", { type: "backlog.epic.polish.ready", epicId: "E-001" })).toBe(true);
     expect(isRoleSubscribedToEvent("Reviewer", { type: "backlog.epic.review.ready", epicId: "E-001" })).toBe(true);
     expect(isRoleSubscribedToEvent("Reviewer", { type: "debug.playwright-test" })).toBe(true);
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "acceptance-test.update" })).toBe(true);
@@ -42,7 +44,11 @@ describe("agent-role-definitions", () => {
 
     const developerPrompt = getRoleEventPromptDefinition("Developer", "backlog.epic.ready");
     expect(developerPrompt.promptEventType).toBe("implementation");
-    expect(developerPrompt.emitEventType).toBe("backlog.epic.review.ready");
+    expect(developerPrompt.emitEventType).toBe("backlog.epic.polish.ready");
+
+    const polisherPrompt = getRoleEventPromptDefinition("Polisher", "backlog.epic.polish.ready");
+    expect(polisherPrompt.promptEventType).toBe("polishing");
+    expect(polisherPrompt.emitEventType).toBe("backlog.epic.review.ready");
 
     const reviewerPrompt = getRoleEventPromptDefinition("Reviewer", "backlog.epic.review.ready");
     expect(reviewerPrompt.promptEventType).toBe("review");

@@ -1,4 +1,4 @@
-export type AgentRole = "Orchestrator" | "Developer" | "Gatekeeper" | "Reviewer";
+export type AgentRole = "Orchestrator" | "Developer" | "Polisher" | "Gatekeeper" | "Reviewer";
 
 export interface AgentRoleAssignment {
   id: string;
