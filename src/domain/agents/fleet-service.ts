@@ -12,6 +12,7 @@ import type { RoleHookPhase, RoleHooksByAgentRole } from "../hooks-model.js";
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import { ShellHookCommandRunner, type HookCommandRunner } from "../../infra/process/hook-command-runner.js";
+import type { FleetApiServerLifecycle, FleetApiServerStatus } from "../../api/mcp/fleet-api-server-lifecycle.js";
 import { getRoleEventPromptDefinition } from "./agent-role-definitions.js";
 import { renderEventPromptTemplate } from "./event-prompt-template.js";
 import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-prompts.js";
@@ -30,6 +31,7 @@ export interface FleetStatus {
   summary: "running" | "stopped" | "degraded";
   agents: AgentRuntime[];
   sessions: AppServerSession[];
+  apiServer?: FleetApiServerStatus;
 }
 
 interface TargetInput {
@@ -57,6 +59,7 @@ export class FleetService {
     private readonly appServerClient: AppServerClient = new AppServerClient(),
     private readonly hooksPath: string = DEFAULT_HOOKS_PATH,
     private readonly hookCommandRunner: HookCommandRunner = new ShellHookCommandRunner(),
+    private readonly apiServerLifecycle?: FleetApiServerLifecycle,
   ) {
     // Retained for compatibility with existing constructor call sites.
     void this.rolesPath;
@@ -79,8 +82,9 @@ export class FleetService {
     const selectedIds = new Set(runtimes.map((agent) => agent.id));
     const sessions = sessionCollection.sessions.filter((session) => selectedIds.has(session.agentId));
 
-    const summary = summarizeStatus(runtimes, sessions);
-    return { summary, agents: runtimes, sessions };
+    const apiServer = this.apiServerLifecycle?.status();
+    const summary = summarizeStatus(runtimes, sessions, apiServer);
+    return { summary, agents: runtimes, sessions, ...(apiServer ? { apiServer } : {}) };
   }
 
   async up(input: {
@@ -94,6 +98,10 @@ export class FleetService {
   } = {}): Promise<FleetStatus> {
     this.threadResponseLanguage = normalizeLanguage(input.lang);
     this.reviewerPlaywrightServerUrl = normalizePlaywrightServerUrl(input.playwrightServerUrl);
+    if (this.apiServerLifecycle) {
+      await this.apiServerLifecycle.start();
+    }
+
     const targets = buildTargetAgents({
       gatekeepers: input.gatekeepers ?? DEFAULT_GATEKEEPER_COUNT,
       developers: input.developers ?? DEFAULT_DEVELOPER_COUNT,
@@ -214,6 +222,10 @@ export class FleetService {
     sessions.updatedAt = new Date().toISOString();
     await this.runtimeRepository.save(runtime);
     await this.sessionRepository.save(sessions);
+
+    if (input.all && this.apiServerLifecycle) {
+      await this.apiServerLifecycle.stop();
+    }
 
     return this.status(input.role);
   }
@@ -622,7 +634,11 @@ function validateRoleCount(label: string, value: number): void {
   }
 }
 
-function summarizeStatus(agents: AgentRuntime[], sessions: AppServerSession[]): "running" | "stopped" | "degraded" {
+function summarizeStatus(
+  agents: AgentRuntime[],
+  sessions: AppServerSession[],
+  apiServer?: FleetApiServerStatus,
+): "running" | "stopped" | "degraded" {
   if (agents.length === 0) {
     return "stopped";
   }
@@ -633,12 +649,16 @@ function summarizeStatus(agents: AgentRuntime[], sessions: AppServerSession[]): 
     return agent.status === "running" && session?.status === "ready";
   });
 
-  if (allRunning) {
+  const apiRunning = !apiServer || apiServer.state === "running";
+  if (allRunning && apiRunning) {
     return "running";
   }
 
   const allStopped = agents.every((agent) => agent.status === "stopped");
   if (allStopped) {
+    if (apiServer?.state === "running") {
+      return "degraded";
+    }
     return "stopped";
   }
 

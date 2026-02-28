@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { FleetService } from "../src/domain/agents/fleet-service.js";
+import type { FleetApiServerLifecycle, FleetApiServerStatus } from "../src/api/mcp/fleet-api-server-lifecycle.js";
 import type { AgentRole } from "../src/domain/roles-model.js";
 import type { AppServerSession } from "../src/domain/app-server-session-model.js";
 import type { FleetProcessStartResult } from "../src/infra/process/fleet-process-manager.js";
@@ -113,7 +114,70 @@ class FakeHookCommandRunner implements HookCommandRunner {
   }
 }
 
+class FakeApiServerLifecycle implements FleetApiServerLifecycle {
+  public started = 0;
+  public stopped = 0;
+  private state: FleetApiServerStatus = {
+    state: "stopped",
+    host: "127.0.0.1",
+    port: 3290,
+    startedAt: null,
+  };
+
+  async start(): Promise<FleetApiServerStatus> {
+    this.started += 1;
+    this.state = {
+      state: "running",
+      host: "127.0.0.1",
+      port: 3290,
+      startedAt: "2026-01-01T00:00:00.000Z",
+    };
+    return this.state;
+  }
+
+  async stop(): Promise<void> {
+    this.stopped += 1;
+    this.state = {
+      state: "stopped",
+      host: "127.0.0.1",
+      port: 3290,
+      startedAt: null,
+    };
+  }
+
+  status(): FleetApiServerStatus {
+    return this.state;
+  }
+}
+
 describe("FleetService", () => {
+  it("starts and stops MCP API server with fleet lifecycle", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+
+    const apiLifecycle = new FakeApiServerLifecycle();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      new FakeAppServerClient() as never,
+      undefined,
+      undefined,
+      apiLifecycle,
+    );
+
+    const upStatus = await service.up();
+    expect(apiLifecycle.started).toBe(1);
+    expect(upStatus.apiServer?.state).toBe("running");
+
+    const downStatus = await service.down({ all: true });
+    expect(apiLifecycle.stopped).toBe(1);
+    expect(downStatus.apiServer?.state).toBe("stopped");
+  });
+
   it("starts fixed roles with default counts and transitions runtime/session state on up and down", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");

@@ -8,6 +8,7 @@ import type { AgentRuntime } from "../../domain/agent-runtime-model.js";
 import type { AppServerSession } from "../../domain/app-server-session-model.js";
 import type { AgentRole } from "../../domain/roles-model.js";
 import { FleetService } from "../../domain/agents/fleet-service.js";
+import { McpApiServerLifecycle } from "../../api/mcp/fleet-api-server-lifecycle.js";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { AgentEventQueueWorkerService } from "../../domain/events/agent-event-queue-worker-service.js";
@@ -128,7 +129,16 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       }
     },
   });
-  const service = new FleetService(undefined, undefined, undefined, undefined, appServerClient);
+  const service = new FleetService(
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    appServerClient,
+    undefined,
+    undefined,
+    new McpApiServerLifecycle(),
+  );
   const commandName = options.commandName ?? "fleetctl";
 
   const cmd = new Command(commandName);
