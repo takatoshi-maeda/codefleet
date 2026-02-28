@@ -2,7 +2,7 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { mountMcpRoutes, type AgentMount } from "../../../vendor/ai-kit/src/hono/index.js";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
-import { NoopFrontDeskAgent } from "./agents/noop-agent.js";
+import { createCodefleetFrontDeskAgent } from "./agents/codefleet-front-desk.js";
 import { registerBacklogMcpTools } from "./tools/backlog-tools.js";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -39,7 +39,7 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
       {
         name: FRONT_DESK_AGENT_NAME,
         description: "User-facing support desk for backlog visibility",
-        create: (context) => new NoopFrontDeskAgent(context) as never,
+        create: createCodefleetFrontDeskAgent(backlogService),
       },
     ],
   });

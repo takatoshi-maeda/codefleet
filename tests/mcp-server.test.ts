@@ -81,6 +81,14 @@ describe("McpApiServer", () => {
       const validation = await callTool(port, "backlog.item.get", {});
       expect(validation.result?.isError).toBe(true);
       expect(validation.result?.structuredContent?.error?.code).toBe("ERR_VALIDATION");
+
+      const agentGet = await callTool(port, "agent.run", { message: `${epic.id} の状況を教えて` });
+      expect(agentGet.result?.isError).toBe(false);
+      expect(String(agentGet.result?.structuredContent?.message ?? "")).toContain("tool: backlog.epic.get");
+
+      const agentList = await callTool(port, "agent.run", { message: "item一覧を見せて" });
+      expect(agentList.result?.isError).toBe(false);
+      expect(String(agentList.result?.structuredContent?.message ?? "")).toContain("tool: backlog.item.list");
     } finally {
       await server.stop();
     }
@@ -96,7 +104,23 @@ async function callTool(port: number, tool: string, args: Record<string, unknown
     body: JSON.stringify({ arguments: args }),
   });
   expect(response.status).toBe(200);
-  return (await response.json()) as {
+  const bodyText = await response.text();
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType.includes("text/event-stream")) {
+    const dataLines = bodyText
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length))
+      .filter((line) => line.length > 0);
+    const lastData = dataLines[dataLines.length - 1] ?? "{}";
+    return JSON.parse(lastData) as {
+      result?: {
+        isError?: boolean;
+        structuredContent?: Record<string, any>;
+      };
+    };
+  }
+  return JSON.parse(bodyText) as {
     result?: {
       isError?: boolean;
       structuredContent?: Record<string, any>;
