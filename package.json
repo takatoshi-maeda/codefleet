@@ -28,8 +28,13 @@
     "vitest": "^2.1.8"
   },
   "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@modelcontextprotocol/sdk": "^1.7.0",
     "ajv": "^8.17.1",
     "ajv-formats": "^3.0.1",
-    "commander": "^12.1.0"
+    "commander": "^12.1.0",
+    "hono": "^4.6.20",
+    "langfuse": "^3.38.6",
+    "zod": "^3.24.0"
   }
 }
