@@ -7,14 +7,26 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const binDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(binDir, "..");
-const distEntry = resolve(repoRoot, "dist/cli/codefleet.js");
+const distEntry = resolve(repoRoot, "dist/src/cli/codefleet.js");
+const legacyDistEntry = resolve(repoRoot, "dist/cli/codefleet.js");
 const srcEntry = resolve(repoRoot, "src/cli/codefleet.ts");
 const requireFromBin = createRequire(import.meta.url);
 
-// Prefer compiled output for packaged use; fall back to TS runtime only in local development.
+// In repository development, prefer source entry to avoid stale dist artifacts.
+// Packaged installs do not contain src/cli/*.ts, so they continue to use compiled output.
 let entryArgs;
-if (existsSync(distEntry)) {
+if (existsSync(srcEntry)) {
+  const tsxLoader = requireFromBin.resolve("tsx");
+  entryArgs = [
+    "--import",
+    pathToFileURL(tsxLoader).href,
+    srcEntry,
+    ...process.argv.slice(2)
+  ];
+} else if (existsSync(distEntry)) {
   entryArgs = [distEntry, ...process.argv.slice(2)];
+} else if (existsSync(legacyDistEntry)) {
+  entryArgs = [legacyDistEntry, ...process.argv.slice(2)];
 } else {
   const tsxLoader = requireFromBin.resolve("tsx");
   entryArgs = [
