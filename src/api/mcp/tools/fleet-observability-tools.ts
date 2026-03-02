@@ -21,15 +21,6 @@ const FleetActivityWatchInputSchema = z.object({
   notificationToken: z.string().min(1).optional(),
 });
 
-const FleetExecutionsListInputSchema = z.object({
-  role: AgentRoleSchema.optional(),
-  status: z.enum(["running", "success", "failed"]).optional(),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
-  limit: z.number().int().min(1).max(200).optional(),
-  cursor: z.string().min(1).optional(),
-});
-
 const FleetLogsTailInputSchema = z.object({
   role: AgentRoleSchema.optional(),
   agentRole: AgentRoleSchema.optional(),
@@ -92,30 +83,6 @@ export function registerFleetObservabilityTools(
             await sendWatchNotification(extra as NotificationSenderExtra, event);
           },
         });
-      }),
-  );
-
-  mount.mcpServer.registerTool(
-    "fleet.executions.list",
-    {
-      description: "List fleet execution history",
-      inputSchema: FleetExecutionsListInputSchema.shape,
-    },
-    async (args) =>
-      executeTool(async () => {
-        const input = FleetExecutionsListInputSchema.parse(normalizeToolArgs(args));
-        const listed = await service.listExecutions({
-          role: input.role,
-          status: input.status,
-          from: input.from,
-          to: input.to,
-          limit: input.limit,
-          cursor: input.cursor,
-        });
-        return {
-          executions: listed.executions,
-          ...(listed.nextCursor ? { nextCursor: listed.nextCursor } : {}),
-        };
       }),
   );
 
