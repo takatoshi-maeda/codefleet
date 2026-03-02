@@ -79,6 +79,10 @@ describe("McpApiServer", () => {
       expect(itemGet.result?.isError).toBe(false);
       expect(itemGet.result?.structuredContent?.item?.id).toBe(item.id);
 
+      const activityList = await callTool(port, "fleet.activity.list", {});
+      expect(activityList.result?.isError).toBe(false);
+      expect(Array.isArray(activityList.result?.structuredContent?.roles)).toBe(true);
+
       const notFound = await callTool(port, "backlog.item.get", { id: "I-404" });
       expect(notFound.result?.isError).toBe(true);
       expect(notFound.result?.structuredContent?.error?.code).toBe("ERR_NOT_FOUND");

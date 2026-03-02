@@ -8,6 +8,7 @@ import type { AgentRuntime } from "../../domain/agent-runtime-model.js";
 import type { AppServerSession } from "../../domain/app-server-session-model.js";
 import type { AgentRole } from "../../domain/roles-model.js";
 import { FleetService } from "../../domain/agents/fleet-service.js";
+import { FleetExecutionLog } from "../../domain/agents/fleet-execution-log.js";
 import { McpApiServerLifecycle } from "../../api/mcp/fleet-api-server-lifecycle.js";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
@@ -21,6 +22,7 @@ import {
 } from "../logging/fleet-agent-event-log.js";
 import type { AgentEventQueueMessage } from "../../domain/events/agent-event-queue-message-model.js";
 import type { SystemEvent } from "../../events/router.js";
+import { createUlid } from "../../shared/ulid.js";
 
 interface FleetctlCommandOptions {
   commandName?: string;
@@ -591,6 +593,7 @@ async function waitForShutdownSignal(
   let polling = true;
   let consuming = false;
   const backlogService = new BacklogService();
+  const executionLog = new FleetExecutionLog(path.join(DEFAULT_RUNTIME_DIR, "fleet", "executions.jsonl"));
 
   const consumeLoop = async (): Promise<void> => {
     if (!polling || consuming) {
@@ -614,11 +617,53 @@ async function waitForShutdownSignal(
                 return;
               }
 
+              const startedAt = new Date().toISOString();
+              const executionId = createUlid();
+              await executionLog.append({
+                executionId,
+                agentId: dispatchMessage.agentId,
+                role: dispatchMessage.agentRole,
+                eventType: dispatchMessage.event.type,
+                ...(isEpicScopedEvent(dispatchMessage.event) ? { epicId: dispatchMessage.event.epicId } : {}),
+                queuedAt: message.createdAt,
+                startedAt,
+                status: "running",
+              });
+
               let emittedEvent;
               try {
                 emittedEvent = await service.dispatchQueuedEvent(dispatchMessage);
+                const finishedAt = new Date().toISOString();
+                await executionLog.append({
+                  executionId,
+                  agentId: dispatchMessage.agentId,
+                  role: dispatchMessage.agentRole,
+                  eventType: dispatchMessage.event.type,
+                  ...(isEpicScopedEvent(dispatchMessage.event) ? { epicId: dispatchMessage.event.epicId } : {}),
+                  queuedAt: message.createdAt,
+                  startedAt,
+                  finishedAt,
+                  durationMs: Math.max(Date.parse(finishedAt) - Date.parse(startedAt), 0),
+                  status: "success",
+                });
                 await finalizeEpicExecutionStatus(backlogService, dispatchMessage, message.agentId, null);
               } catch (error) {
+                const finishedAt = new Date().toISOString();
+                await executionLog.append({
+                  executionId,
+                  agentId: dispatchMessage.agentId,
+                  role: dispatchMessage.agentRole,
+                  eventType: dispatchMessage.event.type,
+                  ...(isEpicScopedEvent(dispatchMessage.event) ? { epicId: dispatchMessage.event.epicId } : {}),
+                  queuedAt: message.createdAt,
+                  startedAt,
+                  finishedAt,
+                  durationMs: Math.max(Date.parse(finishedAt) - Date.parse(startedAt), 0),
+                  status: "failed",
+                  error: {
+                    message: error instanceof Error ? error.message : String(error),
+                  },
+                });
                 await finalizeEpicExecutionStatus(backlogService, dispatchMessage, message.agentId, error);
                 throw error;
               }
@@ -912,6 +957,16 @@ async function finalizeEpicExecutionStatus(
     force: true,
     actorId,
   });
+}
+
+function isEpicScopedEvent(event: SystemEvent): event is Extract<SystemEvent, { epicId: string }> {
+  return (
+    (event.type === "backlog.epic.ready" ||
+      event.type === "backlog.epic.polish.ready" ||
+      event.type === "backlog.epic.review.ready") &&
+    typeof event.epicId === "string" &&
+    event.epicId.length > 0
+  );
 }
 
 async function confirmPrompt(input: {

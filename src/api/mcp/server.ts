@@ -3,8 +3,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { mountMcpRoutes, type AgentMount } from "../../../vendor/ai-kit/src/hono/index.js";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
+import { FleetObservabilityService } from "../../domain/agents/fleet-observability-service.js";
 import { createCodefleetFrontDeskAgent } from "./agents/codefleet-front-desk.js";
 import { registerBacklogMcpTools } from "./tools/backlog-tools.js";
+import { registerFleetObservabilityTools } from "./tools/fleet-observability-tools.js";
 import { JsonlMcpToolAuditLogger } from "./tools/mcp-tool-audit-log.js";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -32,6 +34,7 @@ export interface McpApiServerOptions {
   dataDir?: string;
   toolAuditLogPath?: string;
   backlogService?: BacklogService;
+  observabilityService?: FleetObservabilityService;
 }
 
 export async function buildMcpServer(options: McpApiServerOptions = {}): Promise<McpServerBuildResult> {
@@ -39,6 +42,7 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   app.use("/api/mcp", cors({ origin: resolveMcpCorsOrigin }));
   app.use("/api/mcp/*", cors({ origin: resolveMcpCorsOrigin }));
   const backlogService = options.backlogService ?? new BacklogService();
+  const observabilityService = options.observabilityService ?? new FleetObservabilityService();
   const toolAuditLogger = new JsonlMcpToolAuditLogger(options.toolAuditLogPath ?? DEFAULT_TOOL_AUDIT_LOG_PATH);
   const mounts = await mountMcpRoutes(app, {
     basePath: "/api/mcp",
@@ -58,6 +62,9 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
     registerBacklogMcpTools(frontDeskMount, backlogService, {
       agentName: FRONT_DESK_AGENT_NAME,
       logger: toolAuditLogger,
+    });
+    registerFleetObservabilityTools(frontDeskMount, observabilityService, {
+      agentName: FRONT_DESK_AGENT_NAME,
     });
   }
 
@@ -80,6 +87,7 @@ export class McpApiServer {
   private readonly dataDir: string;
   private readonly toolAuditLogPath: string;
   private readonly backlogService?: BacklogService;
+  private readonly observabilityService?: FleetObservabilityService;
 
   constructor(options: McpApiServerOptions = {}) {
     this.host = options.host ?? DEFAULT_HOST;
@@ -87,6 +95,7 @@ export class McpApiServer {
     this.dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
     this.toolAuditLogPath = options.toolAuditLogPath ?? DEFAULT_TOOL_AUDIT_LOG_PATH;
     this.backlogService = options.backlogService;
+    this.observabilityService = options.observabilityService;
   }
 
   async start(): Promise<McpApiServerStatus> {
@@ -98,6 +107,7 @@ export class McpApiServer {
       dataDir: this.dataDir,
       toolAuditLogPath: this.toolAuditLogPath,
       backlogService: this.backlogService,
+      observabilityService: this.observabilityService,
     });
     try {
       await new Promise<void>((resolve, reject) => {
