@@ -1,10 +1,13 @@
-import { ConversationalAgent } from "ai-kit";
+import { ConversationalAgent, createFileTools, FileHistory } from "ai-kit";
 import type { LLMClient, LLMClientOptions, LLMProvider } from "ai-kit";
 import type { AgentContext } from "ai-kit";
 import type { LLMChatInput, LLMResult } from "ai-kit";
 import type { LLMStreamEvent } from "ai-kit";
+import type { ConversationHistory } from "ai-kit";
+import type { ZodType } from "zod";
 import type { BacklogService } from "../domain/backlog/backlog-service.js";
 import { createBacklogAgentTools } from "./tools/backlog-agent-tools.js";
+import { createFeedbackNoteAgentTools } from "./tools/feedback-note-agent-tools.js";
 
 export interface CodefleetFrontDeskLlmConfig {
   provider: LLMProvider;
@@ -18,11 +21,17 @@ export interface CodefleetFrontDeskLlmConfig {
 export interface CodefleetFrontDeskRuntimeConfig {
   llm?: Partial<CodefleetFrontDeskLlmConfig>;
   maxTurns?: number;
+  feedbackNotesDir?: string;
+  fileToolWorkingDir?: string;
+  historyBaseDir?: string;
   clientFactory?: (options: LLMClientOptions) => LLMClient;
 }
 
 interface ResolvedCodefleetFrontDeskRuntimeConfig {
   maxTurns: number;
+  feedbackNotesDir: string;
+  fileToolWorkingDir: string;
+  historyBaseDir: string;
   llm: CodefleetFrontDeskLlmConfig;
   clientFactory: (options: LLMClientOptions) => LLMClient;
 }
@@ -30,6 +39,8 @@ interface ResolvedCodefleetFrontDeskRuntimeConfig {
 const DEFAULT_LLM_PROVIDER: LLMProvider = "openai";
 const DEFAULT_LLM_MODEL = "gpt-5.3-codex";
 const DEFAULT_MAX_TURNS = 6;
+const DEFAULT_FEEDBACK_NOTES_DIR = ".codefleet/data/feedback-notes";
+const DEFAULT_HISTORY_BASE_DIR = ".codefleet/runtime/front-desk-history";
 
 const DEFAULT_API_KEY_ENV_BY_PROVIDER: Record<LLMProvider, string> = {
   openai: "OPENAI_API_KEY",
@@ -39,11 +50,14 @@ const DEFAULT_API_KEY_ENV_BY_PROVIDER: Record<LLMProvider, string> = {
 };
 
 export const CODEFLEET_FRONT_DESK_SYSTEM_PROMPT = [
-  "You are codefleet.front-desk, a read-only support desk for backlog visibility.",
-  "Use only the provided backlog tools. backlog_epic_* maps to backlog.epic.*, backlog_item_* maps to backlog.item.*.",
-  "If an Epic ID or Item ID is explicitly specified, prefer *.get tools.",
-  "If the user asks for lists, filters, or overviews, prefer *.list tools.",
-  "If no data is found, clearly say that nothing was detected.",
+  "You are codefleet.front-desk, the feedback intake desk for Orchestrator.",
+  "Your primary responsibility is to proactively draw out concrete user feedback, clarify ambiguities, and summarize it.",
+  "When enough detail is collected, persist it with feedback_note_create so Orchestrator can act on it.",
+  "Use feedback_note_list when the user asks to review past feedback notes.",
+  "Use ListDirectory and ReadFile to inspect implementation and documentation files when needed.",
+  "You can also use backlog_epic_* and backlog_item_* tools for context when feedback references backlog work.",
+  "When an Epic ID or Item ID is explicitly specified, prefer *.get tools; for lists/overviews, prefer *.list tools.",
+  "If no data is found, clearly say that nothing was detected and ask targeted follow-up questions to refine feedback.",
 ].join("\n");
 
 export function createCodefleetFrontDeskAgent(
@@ -52,16 +66,22 @@ export function createCodefleetFrontDeskAgent(
 ) {
   const resolvedConfig = resolveCodefleetFrontDeskRuntimeConfig(runtimeConfig);
   const llmClient = resolvedConfig.clientFactory(toLlmClientOptions(resolvedConfig.llm));
-  const tools = createBacklogAgentTools(backlogService);
+  const tools = [
+    ...createBacklogAgentTools(backlogService),
+    ...createFeedbackNoteAgentTools(resolvedConfig.feedbackNotesDir),
+    ...createFrontDeskFileReadTools(resolvedConfig.fileToolWorkingDir),
+  ];
 
-  return (context: AgentContext) =>
-    new ConversationalAgent({
-      context,
+  return (context: AgentContext) => {
+    const persistentContext = withPersistentThreadHistory(context, resolvedConfig.historyBaseDir);
+    return new ConversationalAgent({
+      context: persistentContext,
       client: llmClient,
       instructions: CODEFLEET_FRONT_DESK_SYSTEM_PROMPT,
       tools,
       maxTurns: resolvedConfig.maxTurns,
     });
+  };
 }
 
 export function resolveCodefleetFrontDeskRuntimeConfig(
@@ -83,6 +103,9 @@ export function resolveCodefleetFrontDeskRuntimeConfig(
 
   return {
     maxTurns,
+    feedbackNotesDir: runtimeConfig.feedbackNotesDir ?? DEFAULT_FEEDBACK_NOTES_DIR,
+    fileToolWorkingDir: runtimeConfig.fileToolWorkingDir ?? process.cwd(),
+    historyBaseDir: runtimeConfig.historyBaseDir ?? DEFAULT_HISTORY_BASE_DIR,
     llm: {
       provider,
       model,
@@ -93,6 +116,75 @@ export function resolveCodefleetFrontDeskRuntimeConfig(
     },
     clientFactory,
   };
+}
+
+function createFrontDeskFileReadTools(workingDir: string) {
+  const fileTools = createFileTools({ workingDir });
+  const listDirectory = fileTools.find((tool) => tool.name === "ListDirectory");
+  const readFile = fileTools.find((tool) => tool.name === "ReadFile");
+  if (!listDirectory || !readFile) {
+    throw new Error("front-desk file tools are unavailable");
+  }
+  return [listDirectory, readFile];
+}
+
+function withPersistentThreadHistory(context: AgentContext, baseDir: string): AgentContext {
+  if (context.history instanceof FileHistory) {
+    return context;
+  }
+
+  const sessionId = sanitizeSessionIdForFilename(context.sessionId);
+  const persistentHistory = new FileHistory({
+    // sessionId can be user-provided (e.g., MCP agent.run params.sessionId),
+    // so normalize to a filesystem-safe filename segment.
+    sessionId,
+    baseDir,
+  });
+  return new FrontDeskContextWithOverriddenHistory(context, persistentHistory);
+}
+
+function sanitizeSessionIdForFilename(sessionId: string): string {
+  const normalized = sessionId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return normalized.length > 0 ? normalized : "default";
+}
+
+class FrontDeskContextWithOverriddenHistory implements AgentContext {
+  constructor(
+    private readonly base: AgentContext,
+    readonly history: ConversationHistory,
+  ) {}
+
+  get sessionId() {
+    return this.base.sessionId;
+  }
+
+  get progress() {
+    return this.base.progress;
+  }
+
+  get toolCallResults() {
+    return this.base.toolCallResults;
+  }
+
+  get turns() {
+    return this.base.turns;
+  }
+
+  get selectedAgentName() {
+    return this.base.selectedAgentName;
+  }
+
+  set selectedAgentName(value: string | undefined) {
+    this.base.selectedAgentName = value;
+  }
+
+  get metadata() {
+    return this.base.metadata;
+  }
+
+  collectToolResults<T>(schema: ZodType<T>): T[] {
+    return this.base.collectToolResults(schema);
+  }
 }
 
 function toLlmClientOptions(config: CodefleetFrontDeskLlmConfig): LLMClientOptions {

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentContextImpl, InMemoryHistory } from "ai-kit";
 import type { LLMClient, LLMChatInput } from "ai-kit";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { createCodefleetFrontDeskAgent, resolveCodefleetFrontDeskRuntimeConfig } from "../src/agents/front-desk.js";
 import type { BacklogService } from "../src/domain/backlog/backlog-service.js";
 
@@ -93,6 +96,79 @@ describe("codefleet front-desk agent", () => {
     expect(result.content).toContain("I-001");
     expect(backlogService.readItem).toHaveBeenCalledWith({ id: "I-001" });
     expect(streamCallCount).toBe(2);
+  });
+
+  it("reuses session thread history across fresh contexts", async () => {
+    const backlogService = {
+      list: vi.fn(async () => ({
+        epics: [],
+        items: [],
+        questions: [],
+        version: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+      readEpic: vi.fn(),
+      readItem: vi.fn(),
+    } as unknown as BacklogService;
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "front-desk-history-"));
+    const capturedInputs: LLMChatInput[] = [];
+    let streamCallCount = 0;
+    const mockClient: LLMClient = {
+      provider: "openai",
+      model: "mock-front-desk",
+      capabilities: {
+        supportsReasoning: true,
+        supportsToolCalls: true,
+        supportsStreaming: true,
+        supportsImages: false,
+        contextWindowSize: 8_000,
+      },
+      estimateTokens: () => 0,
+      invoke: async () => {
+        throw new Error("invoke should not be called in this test");
+      },
+      stream: async function* (input: LLMChatInput) {
+        capturedInputs.push(input);
+        streamCallCount += 1;
+        const content = streamCallCount === 1 ? "first answer" : "second answer";
+        yield {
+          type: "response.completed",
+          result: {
+            type: "message",
+            content,
+            toolCalls: [],
+            usage: emptyUsage(),
+            responseId: `resp-${streamCallCount}`,
+            finishReason: "stop",
+          },
+        };
+      },
+    };
+
+    const createAgent = createCodefleetFrontDeskAgent(backlogService, {
+      llm: { provider: "openai", model: "gpt-5.3-codex", apiKey: "test-key" },
+      clientFactory: () => mockClient,
+      historyBaseDir: tempDir,
+      maxTurns: 4,
+    });
+
+    const sessionId = "session-thread-1";
+    const firstAgent = createAgent(new AgentContextImpl({ history: new InMemoryHistory(), sessionId }));
+    await firstAgent.invoke("first question");
+
+    const secondAgent = createAgent(new AgentContextImpl({ history: new InMemoryHistory(), sessionId }));
+    await secondAgent.invoke("second question");
+
+    expect(streamCallCount).toBe(2);
+    const secondRunMessages = capturedInputs[1]?.messages ?? [];
+    expect(secondRunMessages.some((message) => message.role === "user" && message.content === "first question")).toBe(true);
+    expect(secondRunMessages.some((message) => message.role === "assistant" && message.content === "first answer")).toBe(
+      true,
+    );
+    expect(secondRunMessages.some((message) => message.role === "user" && message.content === "second question")).toBe(
+      true,
+    );
   });
 });
 

@@ -287,6 +287,10 @@ describe("McpApiServer", () => {
         "backlog_epic_get",
         "backlog_item_list",
         "backlog_item_get",
+        "feedback_note_create",
+        "feedback_note_list",
+        "ListDirectory",
+        "ReadFile",
       ]);
     } finally {
       await server.stop();
