@@ -11,7 +11,7 @@
   "files": [
     "dist",
     "bin",
-    "docs/schemas",
+    "src/schemas",
     "src/prompts"
   ],
   "scripts": {

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codefleet/runtime/app-server-sessions.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "updatedAt", "sessions"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agentId", "status", "initialized", "lastNotificationAt"],
+        "properties": {
+          "agentId": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["disconnected", "initializing", "ready", "error"] },
+          "initialized": { "type": "boolean" },
+          "threadId": {
+            "anyOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "null" }
+            ]
+          },
+          "activeTurnId": {
+            "anyOf": [
+              { "type": "string", "minLength": 1 },
+              { "type": "null" }
+            ]
+          },
+          "lastNotificationAt": { "type": "string", "format": "date-time" },
+          "lastError": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

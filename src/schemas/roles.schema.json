@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codefleet/roles.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["agents"],
+  "properties": {
+    "agents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "role": {
+            "type": "string",
+            "enum": ["Orchestrator", "Developer", "Polisher", "Gatekeeper", "Reviewer"]
+          }
+        }
+      }
+    }
+  }
+}

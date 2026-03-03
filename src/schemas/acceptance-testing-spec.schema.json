@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codefleet/acceptance-testing/spec.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "updatedAt", "tests"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status", "lastExecutionStatus", "epicIds", "itemIds", "updatedAt"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^AT-[0-9]{3,}$"
+          },
+          "title": { "type": "string", "minLength": 1 },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "ready", "in-progress", "archived"]
+          },
+          "lastExecutionStatus": {
+            "type": "string",
+            "enum": ["not-run", "passed", "failed"]
+          },
+          "lastExecutionNote": {
+            "type": "string",
+            "minLength": 1
+          },
+          "epicIds": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^E-[0-9]{3,}$" },
+            "uniqueItems": true
+          },
+          "itemIds": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^I-[0-9]{3,}$" },
+            "uniqueItems": true
+          },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "codefleet/backlog/items.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "updatedAt", "epics", "items"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "epics": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status", "visibility", "acceptanceTestIds", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^E-[0-9]{3,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["product", "technical"] },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "in-progress", "in-review", "changes-requested", "done", "blocked", "failed"]
+          },
+          "visibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type", "dependsOnEpicIds"],
+            "properties": {
+              "type": { "type": "string", "enum": ["always-visible", "blocked-until-epic-complete"] },
+              "dependsOnEpicIds": {
+                "type": "array",
+                "items": { "type": "string", "pattern": "^E-[0-9]{3,}$" },
+                "uniqueItems": true
+              }
+            }
+          },
+          "acceptanceTestIds": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^AT-[0-9]{3,}$" },
+            "uniqueItems": true
+          },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "epicId", "title", "status", "acceptanceTestIds", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^I-[0-9]{3,}$" },
+          "epicId": { "type": "string", "pattern": "^E-[0-9]{3,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "kind": { "type": "string", "enum": ["product", "technical"] },
+          "notes": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 },
+            "uniqueItems": true
+          },
+          "status": {
+            "type": "string",
+            "enum": ["todo", "wait-implementation", "in-progress", "done", "blocked"]
+          },
+          "acceptanceTestIds": {
+            "type": "array",
+            "items": { "type": "string", "pattern": "^AT-[0-9]{3,}$" },
+            "uniqueItems": true
+          },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "status", "updatedAt"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^Q-[0-9]{3,}$" },
+          "title": { "type": "string", "minLength": 1 },
+          "details": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["open", "answered"] },
+          "answer": { "type": "string", "minLength": 1 },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}
