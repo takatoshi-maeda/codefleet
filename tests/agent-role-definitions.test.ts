@@ -3,7 +3,7 @@ import {
   getAgentRoleDefinition,
   getRoleEventPromptDefinition,
   isRoleSubscribedToEvent,
-} from "../src/domain/agents/agent-role-definitions.js";
+} from "../src/domain/fleet/agent-role-definitions.js";
 
 describe("agent-role-definitions", () => {
   it("keeps event subscriptions by role", () => {

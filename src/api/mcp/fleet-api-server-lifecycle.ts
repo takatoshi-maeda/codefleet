@@ -1,18 +1,10 @@
 import { McpApiServer, type McpApiServerOptions } from "./server.js";
+import type {
+  FleetApiServerLifecycle,
+  FleetApiServerStatus,
+} from "../../domain/fleet/fleet-api-server-lifecycle-port.js";
 
-export interface FleetApiServerStatus {
-  state: "running" | "stopped" | "error";
-  host: string;
-  port: number;
-  startedAt: string | null;
-  lastError?: string;
-}
-
-export interface FleetApiServerLifecycle {
-  start(): Promise<FleetApiServerStatus>;
-  stop(): Promise<void>;
-  status(): FleetApiServerStatus;
-}
+export type { FleetApiServerLifecycle, FleetApiServerStatus };
 
 export class McpApiServerLifecycle implements FleetApiServerLifecycle {
   private readonly server: McpApiServer;

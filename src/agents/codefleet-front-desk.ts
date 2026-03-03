@@ -3,8 +3,8 @@ import type { LLMClient, LLMClientOptions, LLMProvider } from "ai-kit";
 import type { AgentContext } from "ai-kit";
 import type { LLMChatInput, LLMResult } from "ai-kit";
 import type { LLMStreamEvent } from "ai-kit";
-import type { BacklogService } from "../../../domain/backlog/backlog-service.js";
-import { createBacklogAgentTools } from "../tools/backlog-agent-tools.js";
+import type { BacklogService } from "../domain/backlog/backlog-service.js";
+import { createBacklogAgentTools } from "./tools/backlog-agent-tools.js";
 
 export interface CodefleetFrontDeskLlmConfig {
   provider: LLMProvider;

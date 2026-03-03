@@ -5,7 +5,7 @@ import {
   listBacklogToolDefinitions,
   normalizeToolArgs,
   type BacklogToolName,
-} from "./backlog-tool-core.js";
+} from "../../../application/tools/backlog-tools.js";
 import type { McpToolAuditLogEntry, McpToolAuditLogger } from "./mcp-tool-audit-log.js";
 
 interface RegisterBacklogMcpToolsOptions {

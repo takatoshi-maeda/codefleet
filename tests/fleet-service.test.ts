@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { FleetService } from "../src/domain/agents/fleet-service.js";
+import { FleetService } from "../src/domain/fleet/fleet-service.js";
 import type { FleetApiServerLifecycle, FleetApiServerStatus } from "../src/api/mcp/fleet-api-server-lifecycle.js";
 import type { AgentRole } from "../src/domain/roles-model.js";
 import type { AppServerSession } from "../src/domain/app-server-session-model.js";

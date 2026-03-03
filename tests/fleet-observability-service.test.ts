@@ -2,8 +2,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FleetExecutionLog } from "../src/domain/agents/fleet-execution-log.js";
-import { FleetObservabilityService } from "../src/domain/agents/fleet-observability-service.js";
+import { FleetExecutionLog } from "../src/domain/fleet/fleet-execution-log.js";
+import { FleetObservabilityService } from "../src/domain/fleet/fleet-observability-service.js";
 
 describe("FleetObservabilityService", () => {
   it("aggregates activity by role with busy/idle counts", async () => {

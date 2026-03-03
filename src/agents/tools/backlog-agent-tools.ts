@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ToolDefinition } from "ai-kit";
-import type { BacklogService } from "../../../domain/backlog/backlog-service.js";
+import type { BacklogService } from "../../domain/backlog/backlog-service.js";
 import {
   BacklogEpicGetInputSchema,
   BacklogEpicListInputSchema,
@@ -8,7 +8,7 @@ import {
   BacklogItemListInputSchema,
   executeBacklogTool,
   type BacklogToolName,
-} from "./backlog-tool-core.js";
+} from "../../application/tools/backlog-tools.js";
 
 type BacklogAgentToolName =
   | "backlog_epic_list"

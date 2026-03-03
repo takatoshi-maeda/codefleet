@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CodefleetError } from "../src/shared/errors.js";
-import { renderEventPromptTemplate } from "../src/domain/agents/event-prompt-template.js";
+import { renderEventPromptTemplate } from "../src/domain/fleet/event-prompt-template.js";
 
 describe("event-prompt-template", () => {
   it("renders received parameters directly and via event namespace", () => {

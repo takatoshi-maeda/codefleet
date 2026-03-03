@@ -53,7 +53,7 @@ function roleToPromptDir(role: AgentRole): string {
 }
 
 function resolveProjectRoot(): string {
-  // This module is emitted to `dist/domain/agents`; the same traversal from `src` and `dist`
+  // This module is emitted to `dist/domain/fleet`; the same traversal from `src` and `dist`
   // reaches repository root, which keeps prompt path resolution stable in dev and build runs.
   const currentDir = path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(currentDir, "..", "..", "..");

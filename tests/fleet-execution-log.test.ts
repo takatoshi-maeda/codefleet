@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { FleetExecutionLog } from "../src/domain/agents/fleet-execution-log.js";
+import { FleetExecutionLog } from "../src/domain/fleet/fleet-execution-log.js";
 
 describe("FleetExecutionLog", () => {
   it("stores append-only execution records and returns latest state", async () => {

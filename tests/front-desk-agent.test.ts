@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { AgentContextImpl, InMemoryHistory } from "ai-kit";
 import type { LLMClient, LLMChatInput } from "ai-kit";
-import { createCodefleetFrontDeskAgent, resolveCodefleetFrontDeskRuntimeConfig } from "../src/api/mcp/agents/codefleet-front-desk.js";
+import { createCodefleetFrontDeskAgent, resolveCodefleetFrontDeskRuntimeConfig } from "../src/agents/codefleet-front-desk.js";
 import type { BacklogService } from "../src/domain/backlog/backlog-service.js";
 
 describe("codefleet front-desk agent", () => {

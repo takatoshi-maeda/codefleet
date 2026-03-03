@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { LLMClient, LLMChatInput, LLMMessage } from "ai-kit";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
-import type { CodefleetFrontDeskRuntimeConfig } from "../src/api/mcp/agents/codefleet-front-desk.js";
+import type { CodefleetFrontDeskRuntimeConfig } from "../src/agents/codefleet-front-desk.js";
 import { McpApiServer } from "../src/api/mcp/server.js";
 
 describe("McpApiServer", () => {

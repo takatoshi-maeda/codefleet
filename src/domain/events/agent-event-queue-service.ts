@@ -4,7 +4,7 @@ import { atomicWriteJson } from "../../infra/fs/atomic-write.js";
 import type { SystemEvent } from "../../events/router.js";
 import { createUlid } from "../../shared/ulid.js";
 import type { AgentRuntimeCollection } from "../agent-runtime-model.js";
-import { isRoleSubscribedToEvent } from "../agents/agent-role-definitions.js";
+import { isRoleSubscribedToEvent } from "../fleet/agent-role-definitions.js";
 import type { AgentEventQueueMessage } from "./agent-event-queue-message-model.js";
 
 const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
