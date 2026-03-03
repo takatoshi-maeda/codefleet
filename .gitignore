@@ -9,6 +9,3 @@ tmp
 .zsh_history
 devcontainer.local.json
 .env*
-
-# local documentation artifacts
-docs/workspace
