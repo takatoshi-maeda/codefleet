@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 import { mountMcpRoutes, type AgentMount } from "ai-kit/hono";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { FleetObservabilityService } from "../../domain/fleet/fleet-observability-service.js";
-import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/codefleet-front-desk.js";
+import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/front-desk.js";
 import { registerBacklogMcpTools } from "./tools/backlog-tools.js";
 import { registerFleetObservabilityTools } from "./tools/fleet-observability-tools.js";
 import { JsonlMcpToolAuditLogger } from "./tools/mcp-tool-audit-log.js";
