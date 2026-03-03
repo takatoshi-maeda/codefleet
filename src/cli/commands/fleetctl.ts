@@ -65,6 +65,7 @@ interface DockerEnvironmentDependencies {
 const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
 const PLAYWRIGHT_SERVER_PID_PATH = path.join(".codefleet", "runtime", "playwright-server.pid");
 const DEFAULT_RUNTIME_DIR = path.join(".codefleet", "runtime");
+const DEFAULT_AGENT_LOG_DIR = path.join(".codefleet", "logs", "agents");
 const DOCKER_ENV_FILE_PATH = "/.dockerenv";
 const DOCKER_CGROUP_PATHS = ["/proc/self/cgroup", "/proc/1/cgroup"] as const;
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
@@ -84,6 +85,7 @@ const ROLE_COLOR_BY_PREFIX: Record<string, string> = {
   developer: "\u001b[32m",
   polisher: "\u001b[34m",
 };
+const agentLogWriteChainByAgentId = new Map<string, Promise<void>>();
 
 export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Command {
   let logMode: LogMode = "human";
@@ -576,11 +578,76 @@ function emitApiServerLog(
 }
 
 function emitLog(record: object, mode: LogMode): void {
+  enqueueFleetAgentLogWrite(record);
   if (mode === "jsonl") {
     console.log(JSON.stringify(record));
     return;
   }
   console.log(formatHumanLog(record));
+}
+
+export function enqueueFleetAgentLogWrite(record: object, logDir: string = DEFAULT_AGENT_LOG_DIR): void {
+  const payload = asRecord(record);
+  if (!payload) {
+    return;
+  }
+
+  const agentId = typeof payload.agentId === "string" ? payload.agentId : null;
+  if (!agentId) {
+    return;
+  }
+
+  const line = buildPersistedAgentLogLine(payload);
+  if (!line) {
+    return;
+  }
+
+  const previous = agentLogWriteChainByAgentId.get(agentId) ?? Promise.resolve();
+  // Serialize per-agent appends so high-frequency notifications preserve ordering
+  // without blocking fleetctl's stdout log stream.
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => {
+      await fs.mkdir(logDir, { recursive: true });
+      const filePath = path.join(logDir, `${agentId}.log`);
+      await fs.appendFile(filePath, `${line}\n`, "utf8");
+    });
+  agentLogWriteChainByAgentId.set(agentId, next);
+  void next.catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[codefleet:fleetctl] failed to persist agent log for ${agentId}: ${message}`);
+  });
+}
+
+export async function flushFleetAgentLogWritesForTest(): Promise<void> {
+  const pending = [...agentLogWriteChainByAgentId.values()];
+  if (pending.length === 0) {
+    return;
+  }
+  await Promise.allSettled(pending);
+}
+
+function buildPersistedAgentLogLine(payload: Record<string, unknown>): string | null {
+  const event = typeof payload.event === "string" ? payload.event : "";
+  const ts = typeof payload.ts === "string" && payload.ts.length > 0 ? payload.ts : new Date().toISOString();
+
+  if (event === "fleet.agent.output") {
+    const message = typeof payload.message === "string" ? payload.message : "";
+    if (message.length === 0) {
+      return null;
+    }
+    return `[${ts}] ${message}`;
+  }
+
+  if (event === "fleet.agent.event") {
+    const summary = typeof payload.summary === "string" ? payload.summary : "";
+    if (summary.length === 0) {
+      return null;
+    }
+    return `[${ts}] ${summary}`;
+  }
+
+  return null;
 }
 
 async function waitForShutdownSignal(
