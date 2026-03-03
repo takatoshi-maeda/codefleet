@@ -2,7 +2,9 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import type { LLMClient, LLMChatInput, LLMMessage } from "ai-kit";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
+import type { CodefleetFrontDeskRuntimeConfig } from "../src/api/mcp/agents/codefleet-front-desk.js";
 import { McpApiServer } from "../src/api/mcp/server.js";
 
 describe("McpApiServer", () => {
@@ -12,6 +14,7 @@ describe("McpApiServer", () => {
       host: "127.0.0.1",
       port,
       dataDir: `.codefleet/runtime/mcp-test-${Date.now().toString(16)}`,
+      frontDesk: createFrontDeskMockConfig(),
     });
 
     try {
@@ -59,6 +62,7 @@ describe("McpApiServer", () => {
       port,
       dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
       backlogService,
+      frontDesk: createFrontDeskMockConfig(),
     });
     try {
       await server.start();
@@ -108,11 +112,11 @@ describe("McpApiServer", () => {
 
       const agentGet = await callTool(port, "agent.run", { message: `${epic.id} の状況を教えて` });
       expect(agentGet.result?.isError).toBe(false);
-      expect(String(agentGet.result?.structuredContent?.message ?? "")).toContain("tool: backlog.epic.get");
+      expect(String(agentGet.result?.structuredContent?.message ?? "")).toContain("tool: backlog_epic_get");
 
       const agentList = await callTool(port, "agent.run", { message: "item一覧を見せて" });
       expect(agentList.result?.isError).toBe(false);
-      expect(String(agentList.result?.structuredContent?.message ?? "")).toContain("tool: backlog.item.list");
+      expect(String(agentList.result?.structuredContent?.message ?? "")).toContain("tool: backlog_item_list");
     } finally {
       await server.stop();
     }
@@ -144,6 +148,7 @@ describe("McpApiServer", () => {
       dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
       toolAuditLogPath: auditLogPath,
       backlogService,
+      frontDesk: createFrontDeskMockConfig(),
     });
 
     try {
@@ -169,6 +174,123 @@ describe("McpApiServer", () => {
     expect(parsed.isError).toBe(false);
     expect(typeof parsed.durationMs).toBe("number");
     expect(parsed.resultCount).toBe(1);
+  });
+
+  it("fails fast when llm mode is configured without api key", async () => {
+    const port = 42000 + Math.floor(Math.random() * 1000);
+    const server = new McpApiServer({
+      host: "127.0.0.1",
+      port,
+      dataDir: `.codefleet/runtime/mcp-test-${Date.now().toString(16)}`,
+      frontDesk: {
+        llm: {
+          provider: "openai",
+          model: "gpt-5.3-codex",
+          apiKeyEnv: "CODEFLEET_TEST_MISSING_KEY",
+        },
+      },
+    });
+    await expect(server.start()).rejects.toThrow(/CODEFLEET_TEST_MISSING_KEY/);
+  });
+
+  it("serves agent.run in llm mode using backlog tools", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-llm-agent-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const backlogService = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await backlogService.addEpic({ title: "llm-epic", acceptanceTestIds: [] });
+
+    let streamCallCount = 0;
+    const streamInputs: LLMChatInput[] = [];
+    const mockClient: LLMClient = {
+      provider: "openai",
+      model: "mock-mcp-llm",
+      capabilities: {
+        supportsReasoning: true,
+        supportsToolCalls: true,
+        supportsStreaming: true,
+        supportsImages: false,
+        contextWindowSize: 8_000,
+      },
+      estimateTokens: () => 0,
+      invoke: async () => {
+        throw new Error("invoke should not be called");
+      },
+      stream: async function* (input: LLMChatInput) {
+        streamCallCount += 1;
+        streamInputs.push(input);
+        if (streamCallCount === 1) {
+          yield {
+            type: "response.completed",
+            result: {
+              type: "tool_use",
+              content: null,
+              toolCalls: [
+                {
+                  id: "tc-epic-get",
+                  name: "backlog_epic_get",
+                  arguments: { id: epic.id },
+                },
+              ],
+              usage: emptyUsage(),
+              responseId: "resp-1",
+              finishReason: "tool_use",
+            },
+          };
+          return;
+        }
+        yield {
+          type: "response.completed",
+          result: {
+            type: "message",
+            content: `Epic ${epic.id} を確認しました。`,
+            toolCalls: [],
+            usage: emptyUsage(),
+            responseId: "resp-2",
+            finishReason: "stop",
+          },
+        };
+      },
+    };
+
+    const port = 43000 + Math.floor(Math.random() * 1000);
+    const server = new McpApiServer({
+      host: "127.0.0.1",
+      port,
+      dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
+      backlogService,
+      frontDesk: {
+        llm: { provider: "openai", model: "gpt-5.3-codex", apiKey: "test-key" },
+        clientFactory: () => mockClient,
+        maxTurns: 4,
+      },
+    });
+
+    try {
+      await server.start();
+      const agentRun = await callTool(port, "agent.run", { message: "epic detail please" });
+      expect(agentRun.result?.isError).toBe(false);
+      expect(String(agentRun.result?.structuredContent?.message ?? "")).toContain(epic.id);
+      expect(streamCallCount).toBe(2);
+      expect(streamInputs[0]?.tools?.map((tool) => tool.name)).toEqual([
+        "backlog_epic_list",
+        "backlog_epic_get",
+        "backlog_item_list",
+        "backlog_item_get",
+      ]);
+    } finally {
+      await server.stop();
+    }
   });
 });
 
@@ -203,4 +325,110 @@ async function callTool(port: number, tool: string, args: Record<string, unknown
       structuredContent?: Record<string, any>;
     };
   };
+}
+
+function emptyUsage() {
+  return {
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedInputTokens: 0,
+    totalTokens: 0,
+    inputCost: 0,
+    outputCost: 0,
+    cacheCost: 0,
+    totalCost: 0,
+  };
+}
+
+function createFrontDeskMockConfig(): CodefleetFrontDeskRuntimeConfig {
+  return {
+    llm: { provider: "openai", model: "gpt-5.3-codex", apiKey: "test-key" },
+    clientFactory: () => createDeterministicFrontDeskMockClient(),
+    maxTurns: 4,
+  };
+}
+
+function createDeterministicFrontDeskMockClient(): LLMClient {
+  return {
+    provider: "openai",
+    model: "mock-front-desk",
+    capabilities: {
+      supportsReasoning: true,
+      supportsToolCalls: true,
+      supportsStreaming: true,
+      supportsImages: false,
+      contextWindowSize: 8_000,
+    },
+    estimateTokens: () => 0,
+    invoke: async () => {
+      throw new Error("invoke should not be called");
+    },
+    stream: async function* (input: LLMChatInput) {
+      const lastToolMessage = findLastToolMessage(input.messages);
+      if (lastToolMessage) {
+        const resolvedToolName = lastToolMessage.name ?? "unknown";
+        yield {
+          type: "response.completed",
+          result: {
+            type: "message",
+            content: `tool: ${resolvedToolName}`,
+            toolCalls: [],
+            usage: emptyUsage(),
+            responseId: "resp-finish",
+            finishReason: "stop",
+          },
+        };
+        return;
+      }
+
+      const userMessage = findLastUserMessage(input.messages).toLowerCase();
+      const selectedToolName = userMessage.includes("item")
+        ? "backlog_item_list"
+        : /e-\d{3,}/i.test(userMessage)
+          ? "backlog_epic_get"
+          : "backlog_epic_list";
+      const selectedArgs = selectedToolName === "backlog_epic_get" ? { id: findFirstEpicId(userMessage) } : {};
+
+      yield {
+        type: "response.completed",
+        result: {
+          type: "tool_use",
+          content: null,
+          toolCalls: [
+            {
+              id: "tc-deterministic",
+              name: selectedToolName,
+              arguments: selectedArgs,
+            },
+          ],
+          usage: emptyUsage(),
+          responseId: "resp-tool",
+          finishReason: "tool_use",
+        },
+      };
+    },
+  };
+}
+
+function findLastToolMessage(messages: LLMMessage[]): LLMMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "tool") {
+      return messages[index];
+    }
+  }
+  return undefined;
+}
+
+function findLastUserMessage(messages: LLMMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === "user" && typeof messages[index].content === "string") {
+      return messages[index].content;
+    }
+  }
+  return "";
+}
+
+function findFirstEpicId(message: string): string {
+  const matched = message.match(/\be-\d{3,}\b/i);
+  return matched?.[0]?.toUpperCase() ?? "E-001";
 }
