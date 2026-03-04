@@ -46,6 +46,8 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   const app = new Hono();
   app.use("/api/mcp", cors({ origin: resolveMcpCorsOrigin }));
   app.use("/api/mcp/*", cors({ origin: resolveMcpCorsOrigin }));
+  const dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
+
   const backlogService = options.backlogService ?? new BacklogService();
   const observabilityService = options.observabilityService ?? new FleetObservabilityService();
   const eventQueueService = new AgentEventQueueService();
@@ -57,7 +59,7 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   };
   const mounts = await mountMcpRoutes(app, {
     basePath: "/api/mcp",
-    dataDir: options.dataDir ?? DEFAULT_DATA_DIR,
+    dataDir,
     agentDefinitions: [
       {
         name: FRONT_DESK_AGENT_NAME,

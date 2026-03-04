@@ -138,6 +138,63 @@ describe("McpApiServer", () => {
       expect(conversation.result?.isError).toBe(false);
       const firstTurn = conversation.result?.structuredContent?.turns?.[0] as { userContent?: unknown } | undefined;
       expect(firstTurn?.userContent).toEqual(imageInput);
+
+      const base64SessionId = `sess-base64-${Date.now().toString(16)}`;
+      const base64Run = await callTool(port, "agent.run", {
+        sessionId: base64SessionId,
+        input: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              mediaType: "image/png",
+              data:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Nm7cAAAAASUVORK5CYII=",
+            },
+          },
+          { type: "text", text: "保存して" },
+        ],
+      });
+      expect(base64Run.result?.isError).toBe(false);
+
+      const base64Conversation = await callTool(port, "conversations.get", { sessionId: base64SessionId });
+      expect(base64Conversation.result?.isError).toBe(false);
+      const base64Turn = base64Conversation.result?.structuredContent?.turns?.[0] as {
+        userContent?: Array<{ type?: string; source?: { type?: string; url?: string } }>;
+      } | undefined;
+      const base64ImageUrl = base64Turn?.userContent?.[0]?.source?.url;
+      expect(base64ImageUrl).toMatch(
+        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet\\.front-desk/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-base64-[^/]+/[0-9a-f-]+\\.png$`),
+      );
+      const servedImage = await fetch(String(base64ImageUrl));
+      expect(servedImage.status).toBe(200);
+      expect(servedImage.headers.get("content-type")).toContain("image/png");
+      expect(servedImage.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+
+      const dataUrlSessionId = `sess-dataurl-${Date.now().toString(16)}`;
+      const dataUrlRun = await callTool(port, "agent.run", {
+        sessionId: dataUrlSessionId,
+        input: [
+          {
+            type: "image",
+            source: {
+              type: "url",
+              url:
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Nm7cAAAAASUVORK5CYII=",
+            },
+          },
+          { type: "text", text: "data url 正規化" },
+        ],
+      });
+      expect(dataUrlRun.result?.isError).toBe(false);
+      const dataUrlConversation = await callTool(port, "conversations.get", { sessionId: dataUrlSessionId });
+      const dataUrlTurn = dataUrlConversation.result?.structuredContent?.turns?.[0] as {
+        userContent?: Array<{ source?: { type?: string; url?: string } }>;
+      } | undefined;
+      const normalizedDataUrl = dataUrlTurn?.userContent?.[0]?.source?.url;
+      expect(normalizedDataUrl).toMatch(
+        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet\\.front-desk/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-dataurl-[^/]+/[0-9a-f-]+\\.png$`),
+      );
     } finally {
       await server.stop();
     }
