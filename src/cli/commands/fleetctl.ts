@@ -304,6 +304,9 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       } finally {
         await removeSupervisorPidFile();
       }
+      // Foreground `fleetctl up` is expected to terminate after graceful shutdown even if
+      // third-party internals leave residual handles alive. Exiting explicitly prevents hangs.
+      process.exit(process.exitCode ?? 0);
     });
 
   cmd
@@ -842,6 +845,9 @@ async function waitForShutdownSignal(
       }
 
       void (async () => {
+        if (process.exitCode === undefined) {
+          process.exitCode = exitCodeForSignal(signal);
+        }
         emit({
           ts: new Date().toISOString(),
           level: "info",

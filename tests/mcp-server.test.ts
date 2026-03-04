@@ -138,6 +138,47 @@ describe("McpApiServer", () => {
     }
   });
 
+  it("closes active SSE streams during stop so shutdown does not hang", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-stop-sse-"));
+    const port = 40500 + Math.floor(Math.random() * 1000);
+    const server = new McpApiServer({
+      host: "127.0.0.1",
+      port,
+      dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
+      frontDesk: createFrontDeskMockConfig(),
+    });
+
+    await server.start();
+    const streamResponse = await fetch(
+      `http://127.0.0.1:${port}/api/mcp/codefleet.front-desk/tools/call/backlog.watch`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "text/event-stream",
+        },
+        body: JSON.stringify({ arguments: { includeSnapshot: false, maxDurationSec: 60, heartbeatSec: 30 } }),
+      },
+    );
+    expect(streamResponse.status).toBe(200);
+    expect(streamResponse.headers.get("content-type")).toContain("text/event-stream");
+
+    try {
+      await expect(
+        Promise.race([
+          server.stop(),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error("server.stop() timed out while SSE stream remained open"));
+            }, 2_000);
+          }),
+        ]),
+      ).resolves.toBeUndefined();
+    } finally {
+      await streamResponse.body?.cancel();
+    }
+  });
+
   it("writes backlog tool audit logs as JSONL", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-audit-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");

@@ -63,6 +63,7 @@ interface AppServerConnection {
   completedTurnKeySet: Set<string>;
   nextRequestId: number;
   lastNotificationAt: string;
+  shutdown: (message: string) => void;
 }
 
 type RpcResponseMessage = {
@@ -83,6 +84,8 @@ const AGENT_REASONING_EFFORT = "xhigh";
 const AGENT_THREAD_NETWORK_ACCESS_DEFAULT = true;
 const TURN_COMPLETION_TIMEOUT_MS = 30 * 60 * 1000;
 const MAX_COMPLETED_TURN_CACHE = 256;
+const SHUTDOWN_SIGTERM_GRACE_MS = 1_500;
+const SHUTDOWN_SIGKILL_GRACE_MS = 500;
 
 export class AppServerClient {
   private readonly connections = new Map<string, AppServerConnection>();
@@ -116,9 +119,12 @@ export class AppServerClient {
       completedTurnKeySet: new Set(),
       nextRequestId: 1,
       lastNotificationAt: new Date().toISOString(),
+      shutdown: () => {
+        // Overwritten by wireConnectionLifecycle to provide idempotent pending cleanup.
+      },
     };
     this.connections.set(input.agentId, connection);
-    wireConnectionLifecycle(connection, this.connections, this.options.onNotification);
+    connection.shutdown = wireConnectionLifecycle(connection, this.connections, this.options.onNotification);
 
     if (input.detached) {
       child.unref();
@@ -229,6 +235,26 @@ export class AppServerClient {
     });
   }
 
+  async shutdownAgent(agentId: string): Promise<void> {
+    const connection = this.connections.get(agentId);
+    if (!connection) {
+      return;
+    }
+
+    connection.shutdown(`app-server shutdown requested for ${agentId}`);
+
+    if (connection.child.exitCode !== null || connection.child.signalCode !== null) {
+      return;
+    }
+
+    await terminateChildProcess(connection.child);
+  }
+
+  async shutdownAllAgents(): Promise<void> {
+    const agentIds = Array.from(this.connections.keys());
+    await Promise.all(agentIds.map(async (agentId) => this.shutdownAgent(agentId)));
+  }
+
   private requireConnection(agentId: string): AppServerConnection {
     const connection = this.connections.get(agentId);
     if (!connection) {
@@ -242,7 +268,7 @@ function wireConnectionLifecycle(
   connection: AppServerConnection,
   connectionsByAgentId: Map<string, AppServerConnection>,
   onNotification?: (notification: AppServerNotification) => void,
-): void {
+): (message: string) => void {
   connection.reader.on("line", (line) => {
     const parsed = parseRpcLine(line);
     if (!parsed) {
@@ -279,7 +305,12 @@ function wireConnectionLifecycle(
     }
   });
 
+  let finalized = false;
   const finalize = (message: string): void => {
+    if (finalized) {
+      return;
+    }
+    finalized = true;
     for (const pending of connection.pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(new CodefleetError("ERR_UNEXPECTED", message));
@@ -292,7 +323,12 @@ function wireConnectionLifecycle(
     }
     connection.pending.clear();
     connection.pendingTurnCompletions.clear();
+    connection.reader.removeAllListeners();
     connection.reader.close();
+    if (!connection.child.stdin.destroyed) {
+      connection.child.stdin.destroy();
+    }
+    connection.child.stdout.destroy();
     connectionsByAgentId.delete(connection.agentId);
   };
 
@@ -303,6 +339,8 @@ function wireConnectionLifecycle(
   connection.child.once("exit", (code, signal) => {
     finalize(`app-server process exited for ${connection.agentId} (code=${code ?? "null"}, signal=${signal ?? "null"})`);
   });
+
+  return finalize;
 }
 
 async function sendRequest(
@@ -400,4 +438,52 @@ function markTurnCompleted(connection: AppServerConnection, turnKey: string): vo
     clearTimeout(waiter.timer);
     waiter.resolve();
   }
+}
+
+async function terminateChildProcess(child: ChildProcessByStdio<Writable, Readable, null>): Promise<void> {
+  try {
+    child.kill("SIGTERM");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ESRCH") {
+      throw error;
+    }
+  }
+
+  const exitedAfterSigterm = await waitForChildExit(child, SHUTDOWN_SIGTERM_GRACE_MS);
+  if (exitedAfterSigterm) {
+    return;
+  }
+
+  try {
+    child.kill("SIGKILL");
+  } catch (error) {
+    const err = error as NodeJS.ErrnoException;
+    if (err.code !== "ESRCH") {
+      throw error;
+    }
+  }
+
+  await waitForChildExit(child, SHUTDOWN_SIGKILL_GRACE_MS);
+}
+
+async function waitForChildExit(
+  child: ChildProcessByStdio<Writable, Readable, null>,
+  timeoutMs: number,
+): Promise<boolean> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    const onExit = (): void => {
+      clearTimeout(timer);
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      child.removeListener("exit", onExit);
+      resolve(false);
+    }, timeoutMs);
+    child.once("exit", onExit);
+  });
 }

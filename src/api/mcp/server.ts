@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import type { Socket } from "node:net";
 import { mountMcpRoutes, type AgentMount } from "ai-kit/hono";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { FleetObservabilityService } from "../../domain/fleet/fleet-observability-service.js";
@@ -17,6 +18,7 @@ const DEFAULT_DATA_DIR = ".codefleet/runtime/mcp";
 const DEFAULT_TOOL_AUDIT_LOG_PATH = ".codefleet/runtime/mcp/tool-executions.jsonl";
 const FRONT_DESK_AGENT_NAME = "codefleet.front-desk";
 const MCP_ALLOWED_ORIGINS = new Set(["http://localhost:8081"]);
+const SERVER_STOP_TIMEOUT_MS = 5_000;
 
 export interface McpServerBuildResult {
   app: Hono;
@@ -102,6 +104,8 @@ function resolveMcpCorsOrigin(origin: string): string | undefined {
 export class McpApiServer {
   private server: ReturnType<typeof serve> | null = null;
   private startedAt: string | null = null;
+  private readonly activeSockets = new Set<Socket>();
+  private detachConnectionTracking: (() => void) | null = null;
   private readonly host: string;
   private readonly port: number;
   private readonly dataDir: string;
@@ -143,6 +147,7 @@ export class McpApiServer {
           () => resolve(),
         );
         created.once("error", reject);
+        this.detachConnectionTracking = trackServerConnections(created, this.activeSockets);
         this.server = created;
       });
     } catch (error) {
@@ -160,15 +165,10 @@ export class McpApiServer {
       return;
     }
 
-    await new Promise<void>((resolve, reject) => {
-      target.close((error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-        resolve();
-      });
-    });
+    await closeServerWithActiveConnectionTermination(target, this.activeSockets);
+    this.detachConnectionTracking?.();
+    this.detachConnectionTracking = null;
+    this.activeSockets.clear();
     this.server = null;
     this.startedAt = null;
   }
@@ -181,4 +181,54 @@ export class McpApiServer {
       startedAt: this.startedAt,
     };
   }
+}
+
+type CloseConnectionsCapableServer = ReturnType<typeof serve> & {
+  closeIdleConnections?: () => void;
+  closeAllConnections?: () => void;
+};
+
+function trackServerConnections(server: ReturnType<typeof serve>, sockets: Set<Socket>): () => void {
+  const onConnection = (socket: Socket): void => {
+    sockets.add(socket);
+    socket.once("close", () => {
+      sockets.delete(socket);
+    });
+  };
+
+  server.on("connection", onConnection);
+  return () => {
+    server.off("connection", onConnection);
+  };
+}
+
+async function closeServerWithActiveConnectionTermination(
+  server: ReturnType<typeof serve>,
+  sockets: Set<Socket>,
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`timed out waiting for MCP API server shutdown after ${SERVER_STOP_TIMEOUT_MS}ms`));
+    }, SERVER_STOP_TIMEOUT_MS);
+
+    // Force-close active sockets (including SSE) so server.close can complete promptly.
+    const forceCloseConnections = (): void => {
+      const closeCapable = server as CloseConnectionsCapableServer;
+      closeCapable.closeIdleConnections?.();
+      closeCapable.closeAllConnections?.();
+      for (const socket of sockets) {
+        socket.destroy();
+      }
+    };
+
+    server.close((error) => {
+      clearTimeout(timeout);
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    });
+    forceCloseConnections();
+  });
 }

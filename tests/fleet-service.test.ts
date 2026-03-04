@@ -35,6 +35,7 @@ class FakeAppServerClient {
   public startedThreads: Array<{ agentId: string; baseInstructions?: string }> = [];
   public startedTurns: Array<{ agentId: string; threadId: string; input: Array<{ type: "text"; text: string }> }> = [];
   public completedTurns: Array<{ agentId: string; threadId: string; turnId: string }> = [];
+  public shutdowns: string[] = [];
 
   async startAgent(input: {
     agentId: string;
@@ -89,6 +90,10 @@ class FakeAppServerClient {
 
   async waitForTurnCompletion(agentId: string, threadId: string, turnId: string): Promise<void> {
     this.completedTurns.push({ agentId, threadId, turnId });
+  }
+
+  async shutdownAgent(agentId: string): Promise<void> {
+    this.shutdowns.push(agentId);
   }
 }
 
@@ -256,6 +261,13 @@ describe("FleetService", () => {
     expect(downStatus.sessions.every((session) => session.status === "disconnected")).toBe(true);
     expect(processManager.stopped.length).toBe(5);
     expect(processManager.stopped).toEqual([12345, 12345, 12345, 12345, 12345]);
+    expect(appServer.shutdowns.sort()).toEqual([
+      "developer-1",
+      "gatekeeper-1",
+      "orchestrator-1",
+      "polisher-1",
+      "reviewer-1",
+    ]);
   });
 
   it("uses role counts, filters by role and tails logs", async () => {

@@ -208,6 +208,9 @@ export class FleetService {
         lastHeartbeatAt: now,
       });
 
+      // Shutdown via AppServerClient first so pending RPC timers/stream readers are
+      // synchronously released even if the child process does not exit promptly.
+      await this.appServerClient.shutdownAgent(target.id);
       await this.processManager.stop(pidToStop);
       runtimeAgent.status = "stopped";
       runtimeAgent.pid = null;
