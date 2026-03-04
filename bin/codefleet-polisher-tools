@@ -1,0 +1,80 @@
+#!/usr/bin/env node
+import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const binDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(binDir, "..");
+const distEntry = resolve(repoRoot, "dist/src/cli/codefleet-polisher-tools.js");
+const legacyDistEntry = resolve(repoRoot, "dist/cli/codefleet-polisher-tools.js");
+const srcEntry = resolve(repoRoot, "src/cli/codefleet-polisher-tools.ts");
+const requireFromBin = createRequire(import.meta.url);
+
+// In repository development, prefer source entry to avoid stale dist artifacts.
+// Packaged installs do not contain src/cli/*.ts, so they continue to use compiled output.
+let entryArgs;
+if (existsSync(srcEntry)) {
+  const tsxLoader = requireFromBin.resolve("tsx");
+  entryArgs = [
+    "--import",
+    pathToFileURL(tsxLoader).href,
+    srcEntry,
+    ...process.argv.slice(2)
+  ];
+} else if (existsSync(distEntry)) {
+  entryArgs = [distEntry, ...process.argv.slice(2)];
+} else if (existsSync(legacyDistEntry)) {
+  entryArgs = [legacyDistEntry, ...process.argv.slice(2)];
+} else {
+  const tsxLoader = requireFromBin.resolve("tsx");
+  entryArgs = [
+    "--import",
+    pathToFileURL(tsxLoader).href,
+    srcEntry,
+    ...process.argv.slice(2)
+  ];
+}
+
+const child = spawn(process.execPath, entryArgs, { stdio: "inherit" });
+
+let interruptSignal = null;
+const onInterrupt = (signal) => {
+  // Keep this wrapper alive so the child can run graceful shutdown handlers and decide exit code.
+  interruptSignal = signal;
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  // Explicitly forward the signal so shutdown remains reliable even when only this
+  // wrapper receives SIGINT/SIGTERM (for example when launched under another wrapper).
+  child.kill(signal);
+};
+
+process.on("SIGINT", onInterrupt);
+process.on("SIGTERM", onInterrupt);
+
+child.on("error", (error) => {
+  console.error(error.message);
+  process.exit(1);
+});
+
+child.on("exit", (code, signal) => {
+  process.removeListener("SIGINT", onInterrupt);
+  process.removeListener("SIGTERM", onInterrupt);
+
+  if (typeof code === "number") {
+    process.exit(code);
+  }
+
+  if (signal === "SIGINT" || interruptSignal === "SIGINT") {
+    process.exit(130);
+  }
+
+  if (signal === "SIGTERM" || interruptSignal === "SIGTERM") {
+    process.exit(143);
+  }
+
+  process.exit(1);
+});
