@@ -378,6 +378,51 @@ describe("FleetService", () => {
     expect(status.sessions[0]?.activeTurnId).toBe("gatekeeper-1-event-turn");
   });
 
+  it("uses lang from .codefleet/config.json when up input omits lang", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          lang: "日本語",
+          docsRepository: "https://example.com/spec.git",
+          hooks: {},
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up();
+    await service.dispatchQueuedEvent({
+      id: "evt-lang-config-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      agentId: "gatekeeper-1",
+      agentRole: "Gatekeeper",
+      event: { type: "docs.update", paths: ["docs/spec.md"] },
+      source: { command: "codefleet trigger docs.update" },
+    });
+
+    expect(appServer.startedThreads).toEqual([
+      { agentId: "gatekeeper-1", baseInstructions: "All responses must be in 日本語." },
+    ]);
+  });
+
   it("emits backlog.epic.polish.ready after developer implementation prompt", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
@@ -538,15 +583,19 @@ describe("FleetService", () => {
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
     const logDir = path.join(tempDir, ".codefleet/logs/agents");
-    const hooksPath = path.join(tempDir, ".codefleet/hooks.json");
-    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(
-      hooksPath,
+      configPath,
       JSON.stringify(
         {
-          Developer: {
-            before_start: "echo before",
-            after_complete: "echo complete",
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          hooks: {
+            Developer: {
+              before_start: "echo before",
+              after_complete: "echo complete",
+            },
           },
         },
         null,
@@ -562,7 +611,7 @@ describe("FleetService", () => {
       logDir,
       new FakeProcessManager() as never,
       new FakeAppServerClient() as never,
-      hooksPath,
+      undefined,
       hookRunner,
     );
     await service.up();
@@ -579,20 +628,74 @@ describe("FleetService", () => {
     ]);
   });
 
+  it("reads hooks from .codefleet/config.json hooks field", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          hooks: {
+            Developer: {
+              before_start: "echo before-config",
+              after_complete: "echo complete-config",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const hookRunner = new FakeHookCommandRunner();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      new FakeAppServerClient() as never,
+      undefined,
+      hookRunner,
+    );
+    await service.up();
+
+    await service.dispatchAgentEvent({
+      agentId: "developer-1",
+      agentRole: "Developer",
+      event: { type: "backlog.epic.ready", epicId: "E-999" },
+    });
+
+    expect(hookRunner.executed).toEqual([
+      { command: "echo before-config", phase: "before_start", role: "Developer" },
+      { command: "echo complete-config", phase: "after_complete", role: "Developer" },
+    ]);
+  });
+
   it("runs after_fail hook when role dispatch fails", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
     const logDir = path.join(tempDir, ".codefleet/logs/agents");
-    const hooksPath = path.join(tempDir, ".codefleet/hooks.json");
-    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(
-      hooksPath,
+      configPath,
       JSON.stringify(
         {
-          Developer: {
-            before_start: "echo before",
-            after_fail: "echo failed",
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          hooks: {
+            Developer: {
+              before_start: "echo before",
+              after_fail: "echo failed",
+            },
           },
         },
         null,
@@ -608,7 +711,7 @@ describe("FleetService", () => {
       logDir,
       new FakeProcessManager() as never,
       new FailingTurnAppServerClient() as never,
-      hooksPath,
+      undefined,
       hookRunner,
     );
     await service.up();
@@ -632,14 +735,18 @@ describe("FleetService", () => {
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
     const logDir = path.join(tempDir, ".codefleet/logs/agents");
-    const hooksPath = path.join(tempDir, ".codefleet/hooks.json");
-    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(
-      hooksPath,
+      configPath,
       JSON.stringify(
         {
-          Developer: {
-            before_start: "echo hook-log",
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          hooks: {
+            Developer: {
+              before_start: "echo hook-log",
+            },
           },
         },
         null,
@@ -656,7 +763,7 @@ describe("FleetService", () => {
       logDir,
       new FakeProcessManager() as never,
       new FakeAppServerClient() as never,
-      hooksPath,
+      undefined,
       hookRunner,
     );
     await service.up();

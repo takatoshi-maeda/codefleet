@@ -24,7 +24,7 @@ import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-prompts
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 const DEFAULT_RUNTIME_DIR = ".codefleet/runtime";
 const DEFAULT_LOG_DIR = ".codefleet/logs/agents";
-const DEFAULT_HOOKS_PATH = ".codefleet/hooks.json";
+const CONFIG_FILE_NAME = "config.json";
 const DEFAULT_GATEKEEPER_COUNT = 1;
 const DEFAULT_DEVELOPER_COUNT = 1;
 const DEFAULT_DESIGNER_COUNT = 1;
@@ -62,12 +62,13 @@ export class FleetService {
     private readonly logDir: string = DEFAULT_LOG_DIR,
     private readonly processManager: FleetProcessManager = new FleetProcessManager(),
     private readonly appServerClient: AppServerClient = new AppServerClient(),
-    private readonly hooksPath: string = DEFAULT_HOOKS_PATH,
+    private readonly hooksPath?: string,
     private readonly hookCommandRunner: HookCommandRunner = new ShellHookCommandRunner(),
     private readonly apiServerLifecycle?: FleetApiServerLifecycle,
   ) {
     // Retained for compatibility with existing constructor call sites.
     void this.rolesPath;
+    void this.hooksPath;
     this.runtimeRepository = new JsonRepository<AgentRuntimeCollection>(
       path.join(runtimeDir, "agents.json"),
       SCHEMA_PATHS.agentRuntime,
@@ -108,7 +109,7 @@ export class FleetService {
     lang?: string;
     playwrightServerUrl?: string;
   } = {}): Promise<FleetStatus> {
-    this.threadResponseLanguage = normalizeLanguage(input.lang);
+    this.threadResponseLanguage = await this.resolveThreadResponseLanguage(input.lang);
     this.reviewerPlaywrightServerUrl = normalizePlaywrightServerUrl(input.playwrightServerUrl);
     if (this.apiServerLifecycle) {
       try {
@@ -458,17 +459,52 @@ export class FleetService {
   }
 
   private async readHooksByRole(): Promise<RoleHooksByAgentRole> {
-    const raw = await safeRead(this.hooksPath);
-    if (raw.trim().length === 0) {
+    const config = await this.readConfigFile();
+    if (!config || !("hooks" in config) || config.hooks === undefined) {
       return {};
     }
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      throw new CodefleetError("ERR_VALIDATION", `file is not valid JSON: ${this.hooksPath}`, error);
+    return parseRoleHooksByAgentRole(config.hooks);
+  }
+
+  private async resolveThreadResponseLanguage(explicitLang: string | undefined): Promise<string | undefined> {
+    const normalizedExplicit = normalizeLanguage(explicitLang);
+    if (normalizedExplicit) {
+      return normalizedExplicit;
     }
-    return parseRoleHooksByAgentRole(parsed);
+
+    const config = await this.readConfigFile();
+    if (!config) {
+      return undefined;
+    }
+    const configLang = config.lang;
+    return typeof configLang === "string" ? normalizeLanguage(configLang) : undefined;
+  }
+
+  private async readConfigFile(): Promise<Record<string, unknown> | null> {
+    const configPath = this.resolveConfigPath();
+    const raw = await safeRead(configPath);
+    if (raw.trim().length === 0) {
+      return null;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!isRecord(parsed)) {
+        throw new CodefleetError("ERR_VALIDATION", `file is not a JSON object: ${configPath}`);
+      }
+      return parsed;
+    } catch (error) {
+      if (error instanceof CodefleetError) {
+        throw error;
+      }
+      throw new CodefleetError("ERR_VALIDATION", `file is not valid JSON: ${configPath}`, error);
+    }
+  }
+
+  private resolveConfigPath(): string {
+    // Keep config colocated with roles/hooks so FleetService can be pointed at
+    // a temporary workspace in tests without changing process.cwd().
+    return path.join(path.dirname(this.rolesPath), CONFIG_FILE_NAME);
   }
 }
 
@@ -482,7 +518,7 @@ function buildThreadLanguageInstruction(lang: string | undefined): string | unde
 
 function parseRoleHooksByAgentRole(value: unknown): RoleHooksByAgentRole {
   if (!isRecord(value)) {
-    throw new CodefleetError("ERR_VALIDATION", "hooks.json must be a JSON object");
+    throw new CodefleetError("ERR_VALIDATION", "config.hooks must be a JSON object");
   }
   const candidate = isRecord(value.roles) ? value.roles : value;
   const parsed: RoleHooksByAgentRole = {};
