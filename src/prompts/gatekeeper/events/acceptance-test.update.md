@@ -1,7 +1,7 @@
 ## Current Task
 
-Trigger event: {{triggerEventType}}
-Prompt template: {{promptEventType}}.md
+Reference documents (from docs.update paths):
+{{paths}}
 
 Objectives:
 - First, run `codefleet-gatekeeper-tools --help` to load role-specific usage guidance.
