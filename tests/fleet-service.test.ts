@@ -479,7 +479,7 @@ describe("FleetService", () => {
 
     expect(emittedEvent).toBeNull();
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Gatekeeper must create dedicated acceptance-test scripts");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("codefleet-acceptance-test --help-for-agent");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("codefleet-gatekeeper-tools --help");
   });
 
   it("emits backlog.update after orchestrator handles acceptance-test.update", async () => {

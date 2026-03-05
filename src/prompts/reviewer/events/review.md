@@ -9,8 +9,8 @@ Review perspectives (must evaluate all):
 
 Required workflow:
 - First inspect scope and implementation evidence:
-  - `codefleet-backlog epic read --id {{epicId}}`
-  - `codefleet-backlog item list --epic-id {{epicId}}`
+  - `codefleet-reviewer-tools --help`
+  - `codefleet-reviewer-tools current-context view --epic {{epicId}}`
 - Review repository diffs and test evidence for this Epic.
 - Produce a strict pass/fail decision with concrete reasons.
 
@@ -33,11 +33,10 @@ Commit and exit policy (must follow all):
 
 Decision actions (must execute one path):
 - Pass:
-  - `codefleet-backlog epic update --id {{epicId}} --status done`
+  - `codefleet-reviewer-tools decision pass --epic {{epicId}} --note "<review summary>"`
 - Changes requested:
-  - Before updating status, append a detailed implementation note to the Epic that includes: failing behavior, reproducible steps, expected behavior, likely root cause, and concrete fix guidance for the implementer.
-  - `codefleet-backlog epic update --id {{epicId}} --add-note "<detailed changes-requested rationale and fix guidance>"`
-  - `codefleet-backlog epic update --id {{epicId}} --status changes-requested`
+  - Record a detailed rationale that includes: failing behavior, reproducible steps, expected behavior, likely root cause, and concrete fix guidance for the implementer.
+  - `codefleet-reviewer-tools decision changes-requested --epic {{epicId}} --rationale "Repro: ... Expected: ... Cause: ... Fix: ..."`
 
 System behavior note:
 - After the Reviewer marks `changes-requested`, re-implementation dispatch is handled by the system workflow. Do not manually trigger events.

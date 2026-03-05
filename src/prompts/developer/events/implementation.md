@@ -9,9 +9,8 @@ Implementation guidance:
 - If anything is unclear, proceed with the best judgment based on explicit assumptions.
 - Record assumptions and decisions by appending notes to the relevant Item.
 - Before implementation, run the following commands to review requirements, Epic, and Items:
-  - `codefleet-backlog requirements read`
-  - `codefleet-backlog epic read --id {{epicId}}`
-  - `codefleet-backlog item list --epic-id {{epicId}}`
+  - `codefleet-developer-tools --help`
+  - `codefleet-developer-tools current-context view --epic {{epicId}}`
 - Start the development environment first, and keep it running while implementing and validating changes.
 - Build and validate features from the E2E layer whenever possible:
   - Create or update E2E test scripts before or alongside implementation.
