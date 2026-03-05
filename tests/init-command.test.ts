@@ -43,8 +43,10 @@ describe("init command", () => {
     });
 
     const gitignore = await fs.readFile(path.join(tempDir, ".gitignore"), "utf8");
-    expect(gitignore).toBe("/.codefleet/data/\n/.codefleet/runtime/\n/.codefleet/logs/\n");
-    expect(logSpy).toHaveBeenCalledWith("updated .gitignore: added /.codefleet/data/, /.codefleet/runtime/, /.codefleet/logs/");
+    expect(gitignore).toBe("/.codefleet/data/\n/.codefleet/runtime/\n/.codefleet/logs/\n/.codefleet/archives/\n");
+    expect(logSpy).toHaveBeenCalledWith(
+      "updated .gitignore: added /.codefleet/data/, /.codefleet/runtime/, /.codefleet/logs/, /.codefleet/archives/",
+    );
     expect(addSubmodule).toHaveBeenCalledWith("https://github.com/example/docs-spec.git", "docs/spec");
     const config = JSON.parse(await fs.readFile(path.join(tempDir, ".codefleet", "config.json"), "utf8")) as {
       lang: string;
@@ -74,19 +76,25 @@ describe("init command", () => {
     await runInitCommand({ docsRepository: "git@github.com:example/docs.git", lang: "en" });
 
     const gitignore = await fs.readFile(path.join(tempDir, ".gitignore"), "utf8");
-    expect(gitignore).toBe("node_modules/\n/.codefleet/runtime/\n/.codefleet/data/\n/.codefleet/logs/\n");
+    expect(gitignore).toBe(
+      "node_modules/\n/.codefleet/runtime/\n/.codefleet/data/\n/.codefleet/logs/\n/.codefleet/archives/\n",
+    );
   });
 
   it("does not duplicate equivalent required entries", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-init-"));
     process.chdir(tempDir);
-    await fs.writeFile(path.join(tempDir, ".gitignore"), ".codefleet/data\n.codefleet/runtime\n.codefleet/logs/\n", "utf8");
+    await fs.writeFile(
+      path.join(tempDir, ".gitignore"),
+      ".codefleet/data\n.codefleet/runtime\n.codefleet/logs/\n.codefleet/archives\n",
+      "utf8",
+    );
 
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
     await runInitCommand({ docsRepository: "https://example.com/spec.git", lang: "日本語" });
 
     const gitignore = await fs.readFile(path.join(tempDir, ".gitignore"), "utf8");
-    expect(gitignore).toBe(".codefleet/data\n.codefleet/runtime\n.codefleet/logs/\n");
+    expect(gitignore).toBe(".codefleet/data\n.codefleet/runtime\n.codefleet/logs/\n.codefleet/archives\n");
     expect(logSpy).toHaveBeenCalledWith(".gitignore already contains required codefleet entries");
   });
 });
