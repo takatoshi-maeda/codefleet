@@ -14,10 +14,14 @@ const addFormats =
 
 const ajv = new Ajv2020Ctor({ allErrors: true, strict: false }) as {
   compile: (schema: unknown) => ValidateFunction;
+  getSchema: (keyRef: string) => ValidateFunction | undefined;
 };
 addFormats(ajv);
 
 const validatorCache = new Map<string, ValidateFunction>();
+// Guard against concurrent first-load races. Without this, parallel callers can
+// compile the same schema at once and Ajv rejects duplicate $id registration.
+const validatorLoadCache = new Map<string, Promise<ValidateFunction>>();
 const packageRootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
 function formatValidationErrors(errors: ErrorObject[] | null | undefined): string {
@@ -42,30 +46,55 @@ async function loadValidator(schemaPath: string): Promise<ValidateFunction> {
   if (cached) {
     return cached;
   }
-
-  let schemaRaw: string;
-  try {
-    schemaRaw = await fs.readFile(resolvedPath, "utf8");
-  } catch (error) {
-    throw new CodefleetError("ERR_VALIDATION", `schema file could not be read: ${resolvedPath}`, error);
+  const loading = validatorLoadCache.get(resolvedPath);
+  if (loading) {
+    return loading;
   }
 
-  let schema: unknown;
-  try {
-    schema = JSON.parse(schemaRaw);
-  } catch (error) {
-    throw new CodefleetError("ERR_VALIDATION", `schema file is not valid JSON: ${resolvedPath}`, error);
-  }
+  const loadingPromise = (async (): Promise<ValidateFunction> => {
+    let schemaRaw: string;
+    try {
+      schemaRaw = await fs.readFile(resolvedPath, "utf8");
+    } catch (error) {
+      throw new CodefleetError("ERR_VALIDATION", `schema file could not be read: ${resolvedPath}`, error);
+    }
 
-  let validator: ValidateFunction;
-  try {
-    validator = ajv.compile(schema);
-  } catch (error) {
-    throw new CodefleetError("ERR_VALIDATION", `schema file could not be compiled: ${resolvedPath}`, error);
-  }
+    let schema: unknown;
+    try {
+      schema = JSON.parse(schemaRaw);
+    } catch (error) {
+      throw new CodefleetError("ERR_VALIDATION", `schema file is not valid JSON: ${resolvedPath}`, error);
+    }
 
-  validatorCache.set(resolvedPath, validator);
-  return validator;
+    const schemaId =
+      typeof schema === "object" && schema !== null && "$id" in schema && typeof schema.$id === "string"
+        ? schema.$id
+        : undefined;
+    if (schemaId) {
+      const existing = ajv.getSchema(schemaId);
+      if (existing) {
+        validatorCache.set(resolvedPath, existing);
+        return existing;
+      }
+    }
+
+    let validator: ValidateFunction;
+    try {
+      validator = ajv.compile(schema);
+    } catch (error) {
+      throw new CodefleetError("ERR_VALIDATION", `schema file could not be compiled: ${resolvedPath}`, error);
+    }
+
+    validatorCache.set(resolvedPath, validator);
+    return validator;
+  })();
+
+  validatorLoadCache.set(resolvedPath, loadingPromise);
+  try {
+    return await loadingPromise;
+  } finally {
+    validatorLoadCache.delete(resolvedPath);
+  }
 }
 
 export async function validateAgainstSchema<T>(schemaPath: string, data: unknown, context: string): Promise<T> {
