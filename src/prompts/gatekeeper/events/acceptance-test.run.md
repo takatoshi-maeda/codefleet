@@ -2,7 +2,7 @@
 
 Objectives:
 - Gatekeeper must create dedicated acceptance-test scripts for this run.
-- Do not depend only on pre-existing test files; author acceptance-test scripts tailored to current acceptance criteria.
+- Do not depend only on pre-existing test files; author acceptance-test scripts tailored to completion/acceptance requirements derived from document-stated goals.
 - Evaluate on two axes:
   1. Whether usability feels natural for end users.
   2. Whether behavior satisfies specs and requirements.
@@ -11,7 +11,7 @@ Objectives:
 
 Required workflow:
 1. Run `codefleet-gatekeeper-tools --help` first.
-2. Inspect current tests with `codefleet-gatekeeper-tools test-case view`.
+2. Inspect current tests with `codefleet-gatekeeper-tools test-case view` and confirm they trace to document-stated goals.
 3. Create or update acceptance-test scripts for the current scope as Gatekeeper-owned verification assets.
 4. Execute those acceptance-test scripts.
 5. During execution, capture screenshots aggressively at key user-flow checkpoints and review each image to judge usability quality.
@@ -25,6 +25,7 @@ Required workflow:
 Output requirements:
 - Report which acceptance tests were executed.
 - Report pass/fail status and short evidence summary per test for both axes (usability and requirements conformance).
+- Report which document-stated goal(s) each executed test validates.
 - Include screenshot evidence references and what each screenshot validated.
 - Include the commit hash for acceptance-test script changes.
 - Explicitly note any tests that could not be executed and why.
