@@ -55,6 +55,21 @@ describe("McpApiServer", () => {
         headers: { origin: "http://localhost:8081" },
       });
       expect(corsResponse.headers.get("access-control-allow-origin")).toBe("http://localhost:8081");
+
+      const fleetStatusCorsResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/status`, {
+        headers: { origin: "http://localhost:8081" },
+      });
+      expect(fleetStatusCorsResponse.headers.get("access-control-allow-origin")).toBe("http://localhost:8081");
+
+      const fleetStatusPreflightResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/status`, {
+        method: "OPTIONS",
+        headers: {
+          origin: "http://localhost:8081",
+          "access-control-request-method": "GET",
+        },
+      });
+      expect(fleetStatusPreflightResponse.status).toBe(204);
+      expect(fleetStatusPreflightResponse.headers.get("access-control-allow-origin")).toBe("http://localhost:8081");
     } finally {
       await server.stop();
     }

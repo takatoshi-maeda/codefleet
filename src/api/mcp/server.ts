@@ -49,8 +49,12 @@ export interface McpApiServerOptions {
 
 export async function buildMcpServer(options: McpApiServerOptions = {}): Promise<McpServerBuildResult> {
   const app = new Hono();
+  // Keep browser-access rules consistent across MCP and fleet introspection
+  // endpoints so local dashboards can call both APIs from the same origin.
   app.use("/api/mcp", cors({ origin: resolveMcpCorsOrigin }));
   app.use("/api/mcp/*", cors({ origin: resolveMcpCorsOrigin }));
+  app.use("/api/codefleet", cors({ origin: resolveMcpCorsOrigin }));
+  app.use("/api/codefleet/*", cors({ origin: resolveMcpCorsOrigin }));
   const dataDir = options.dataDir ?? DEFAULT_DATA_DIR;
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
