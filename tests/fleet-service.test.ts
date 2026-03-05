@@ -122,6 +122,15 @@ class FakeHookCommandRunner implements HookCommandRunner {
 class FakeApiServerLifecycle implements FleetApiServerLifecycle {
   public started = 0;
   public stopped = 0;
+  public discovered = [] as Array<{
+    instanceId: string;
+    pid: number;
+    projectId: string;
+    host: string;
+    port: number;
+    startedAt: string;
+    lastHeartbeat: string;
+  }>;
   private state: FleetApiServerStatus = {
     state: "stopped",
     host: "127.0.0.1",
@@ -153,6 +162,10 @@ class FakeApiServerLifecycle implements FleetApiServerLifecycle {
   status(): FleetApiServerStatus {
     return this.state;
   }
+
+  async discover() {
+    return this.discovered;
+  }
 }
 
 describe("FleetService", () => {
@@ -177,6 +190,9 @@ describe("FleetService", () => {
           startedAt: null,
           lastError: "EADDRINUSE 127.0.0.1:3290",
         };
+      },
+      async discover() {
+        return [];
       },
     };
 
@@ -217,6 +233,21 @@ describe("FleetService", () => {
     const upStatus = await service.up();
     expect(apiLifecycle.started).toBe(1);
     expect(upStatus.apiServer?.state).toBe("running");
+    expect(upStatus.discoveredApiServers).toEqual([]);
+
+    apiLifecycle.discovered = [
+      {
+        instanceId: "cf_peer",
+        pid: 43210,
+        projectId: "acme/codefleet",
+        host: "127.0.0.1",
+        port: 3390,
+        startedAt: "2026-01-01T00:00:00.000Z",
+        lastHeartbeat: "2026-01-01T00:00:05.000Z",
+      },
+    ];
+    const statusWithPeer = await service.status();
+    expect(statusWithPeer.discoveredApiServers).toEqual(apiLifecycle.discovered);
 
     const downStatus = await service.down({ all: true });
     expect(apiLifecycle.stopped).toBe(1);

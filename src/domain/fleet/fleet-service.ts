@@ -12,7 +12,11 @@ import type { RoleHookPhase, RoleHooksByAgentRole } from "../hooks-model.js";
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import { ShellHookCommandRunner, type HookCommandRunner } from "../../infra/process/hook-command-runner.js";
-import type { FleetApiServerLifecycle, FleetApiServerStatus } from "./fleet-api-server-lifecycle-port.js";
+import type {
+  FleetApiServerLifecycle,
+  FleetApiServerStatus,
+  FleetDiscoveredApiServer,
+} from "./fleet-api-server-lifecycle-port.js";
 import { getRoleEventPromptDefinition } from "./agent-role-definitions.js";
 import { renderEventPromptTemplate } from "./event-prompt-template.js";
 import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "./role-prompts.js";
@@ -32,6 +36,7 @@ export interface FleetStatus {
   agents: AgentRuntime[];
   sessions: AppServerSession[];
   apiServer?: FleetApiServerStatus;
+  discoveredApiServers?: FleetDiscoveredApiServer[];
 }
 
 interface TargetInput {
@@ -83,8 +88,15 @@ export class FleetService {
     const sessions = sessionCollection.sessions.filter((session) => selectedIds.has(session.agentId));
 
     const apiServer = this.apiServerLifecycle?.status();
+    const discoveredApiServers = this.apiServerLifecycle ? await this.apiServerLifecycle.discover() : undefined;
     const summary = summarizeStatus(runtimes, sessions, apiServer);
-    return { summary, agents: runtimes, sessions, ...(apiServer ? { apiServer } : {}) };
+    return {
+      summary,
+      agents: runtimes,
+      sessions,
+      ...(apiServer ? { apiServer } : {}),
+      ...(discoveredApiServers ? { discoveredApiServers } : {}),
+    };
   }
 
   async up(input: {
