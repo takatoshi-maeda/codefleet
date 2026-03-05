@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { BacklogService } from "../../domain/backlog/backlog-service.js";
+import type { BacklogEpic } from "../../domain/backlog-items-model.js";
 import {
   BacklogObservabilityService,
   type BacklogWatchEvent,
@@ -105,6 +106,12 @@ export interface BacklogToolDefinition {
   ) => Promise<Record<string, unknown>>;
 }
 
+interface EpicVisibilityState {
+  isVisible: boolean;
+  invisibilityReason: "blocked-by-incomplete-epic" | null;
+  blockedByIncompleteEpicIds: string[];
+}
+
 const BACKLOG_TOOL_DEFINITIONS: BacklogToolDefinition[] = [
   {
     name: "backlog.epic.list",
@@ -113,9 +120,13 @@ const BACKLOG_TOOL_DEFINITIONS: BacklogToolDefinition[] = [
     parameters: BacklogEpicListInputSchema,
     run: async (service, rawArgs) => {
       const input = BacklogEpicListInputSchema.parse(normalizeToolArgs(rawArgs));
-      const listed = await service.list(input);
+      // CLI keeps hidden epics included by default unless visible-only is requested.
+      // Mirror that default here so API and CLI return the same baseline dataset.
+      const listInput = { ...input, includeHidden: input.includeHidden ?? true };
+      const [listed, fullSnapshot] = await Promise.all([service.list(listInput), service.list({ includeHidden: true })]);
+      const fullEpicsById = new Map(fullSnapshot.epics.map((epic) => [epic.id, epic]));
       return {
-        epics: listed.epics,
+        epics: listed.epics.map((epic) => enrichEpicWithVisibilityState(epic, fullEpicsById)),
         count: listed.epics.length,
         updatedAt: listed.updatedAt,
       };
@@ -128,7 +139,9 @@ const BACKLOG_TOOL_DEFINITIONS: BacklogToolDefinition[] = [
     parameters: BacklogEpicGetInputSchema,
     run: async (service, rawArgs) => {
       const input = BacklogEpicGetInputSchema.parse(normalizeToolArgs(rawArgs));
-      return { epic: await service.readEpic(input) };
+      const [epic, fullSnapshot] = await Promise.all([service.readEpic(input), service.list({ includeHidden: true })]);
+      const fullEpicsById = new Map(fullSnapshot.epics.map((value) => [value.id, value]));
+      return { epic: enrichEpicWithVisibilityState(epic, fullEpicsById) };
     },
   },
   {
@@ -138,7 +151,8 @@ const BACKLOG_TOOL_DEFINITIONS: BacklogToolDefinition[] = [
     parameters: BacklogItemListInputSchema,
     run: async (service, rawArgs) => {
       const input = BacklogItemListInputSchema.parse(normalizeToolArgs(rawArgs));
-      const listed = await service.list(input);
+      // Keep API default aligned with CLI item list behavior.
+      const listed = await service.list({ ...input, includeHidden: input.includeHidden ?? true });
       return {
         items: listed.items,
         count: listed.items.length,
@@ -242,3 +256,32 @@ function mapToolError(error: unknown): BacklogToolFailure["payload"] {
 
 export { normalizeToolArgs };
 export type { BacklogWatchEvent };
+
+function enrichEpicWithVisibilityState(
+  epic: BacklogEpic,
+  epicsById: ReadonlyMap<string, BacklogEpic>,
+): BacklogEpic & { visibilityState: EpicVisibilityState } {
+  return {
+    ...epic,
+    visibilityState: resolveEpicVisibilityState(epic, epicsById),
+  };
+}
+
+function resolveEpicVisibilityState(epic: BacklogEpic, epicsById: ReadonlyMap<string, BacklogEpic>): EpicVisibilityState {
+  if (epic.visibility.type !== "blocked-until-epic-complete") {
+    return {
+      isVisible: true,
+      invisibilityReason: null,
+      blockedByIncompleteEpicIds: [],
+    };
+  }
+
+  // Dependency ids that are missing or not done are treated as incomplete.
+  const blockedByIncompleteEpicIds = epic.visibility.dependsOnEpicIds.filter((id) => epicsById.get(id)?.status !== "done");
+  const isVisible = blockedByIncompleteEpicIds.length === 0;
+  return {
+    isVisible,
+    invisibilityReason: isVisible ? null : "blocked-by-incomplete-epic",
+    blockedByIncompleteEpicIds,
+  };
+}

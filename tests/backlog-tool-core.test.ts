@@ -43,19 +43,116 @@ describe("backlog-tool-core", () => {
     expect(result.isError).toBe(false);
     expect(result.payload.count).toBe(1);
     expect(Array.isArray(result.payload.epics)).toBe(true);
+    expect((result.payload.epics as Array<{ visibilityState?: unknown }>)[0]?.visibilityState).toEqual({
+      isVisible: true,
+      invisibilityReason: null,
+      blockedByIncompleteEpicIds: [],
+    });
+  });
+
+  it("annotates blocked epic visibility reason on epic.get", async () => {
+    const service = createService({
+      readEpic: vi.fn(async () => ({
+        id: "E-002",
+        title: "blocked epic",
+        kind: "product",
+        status: "todo",
+        visibility: { type: "blocked-until-epic-complete", dependsOnEpicIds: ["E-001"] },
+        acceptanceTestIds: [],
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+      list: vi.fn(async () => ({
+        epics: [
+          {
+            id: "E-001",
+            title: "dependency epic",
+            kind: "product",
+            status: "in-progress",
+            visibility: { type: "always-visible", dependsOnEpicIds: [] },
+            acceptanceTestIds: [],
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "E-002",
+            title: "blocked epic",
+            kind: "product",
+            status: "todo",
+            visibility: { type: "blocked-until-epic-complete", dependsOnEpicIds: ["E-001"] },
+            acceptanceTestIds: [],
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        ],
+        items: [],
+        questions: [],
+        version: 1,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      })),
+    });
+    const result = await executeBacklogTool(service, "backlog.epic.get", { id: "E-002" });
+    expect(result.isError).toBe(false);
+    expect((result.payload.epic as { visibilityState?: unknown }).visibilityState).toEqual({
+      isVisible: false,
+      invisibilityReason: "blocked-by-incomplete-epic",
+      blockedByIncompleteEpicIds: ["E-001"],
+    });
+  });
+
+  it("defaults includeHidden to true for API list tools to match CLI behavior", async () => {
+    const list = vi.fn(async () => ({
+      epics: [
+        {
+          id: "E-001",
+          title: "epic",
+          kind: "product",
+          status: "todo",
+          visibility: { type: "always-visible", dependsOnEpicIds: [] },
+          acceptanceTestIds: [],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      items: [{ id: "I-001", epicId: "E-001" }],
+      questions: [],
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }));
+    const service = createService({ list: list as unknown as BacklogService["list"] });
+
+    await executeBacklogTool(service, "backlog.epic.list", {});
+    await executeBacklogTool(service, "backlog.item.list", {});
+
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ includeHidden: true }));
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({ includeHidden: true }));
   });
 });
 
 function createService(overrides?: Partial<BacklogService>): BacklogService {
   const base = {
     list: vi.fn(async () => ({
-      epics: [{ id: "E-001" }],
+      epics: [
+        {
+          id: "E-001",
+          title: "epic",
+          kind: "product",
+          status: "todo",
+          visibility: { type: "always-visible", dependsOnEpicIds: [] },
+          acceptanceTestIds: [],
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
       items: [{ id: "I-001", epicId: "E-001" }],
       questions: [],
       version: 1,
       updatedAt: "2026-01-01T00:00:00.000Z",
     })),
-    readEpic: vi.fn(async ({ id }: { id: string }) => ({ id })),
+    readEpic: vi.fn(async ({ id }: { id: string }) => ({
+      id,
+      title: "epic",
+      kind: "product",
+      status: "todo",
+      visibility: { type: "always-visible", dependsOnEpicIds: [] },
+      acceptanceTestIds: [],
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })),
     readItem: vi.fn(async ({ id }: { id: string }) => ({ id })),
   };
   return { ...base, ...overrides } as unknown as BacklogService;
