@@ -15,7 +15,8 @@
     "source=devcontainer-gh-config-${localEnv:USER},target=/home/vibebox/.config/gh.org,type=volume",
     // Other
     "source=${env:HOME}/.zsh_history,target=/home/vibebox/.zsh_history,type=bind",
-    "source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock,type=bind"
+    "source=${env:SSH_AUTH_SOCK},target=/tmp/ssh-agent.sock,type=bind",
+    "source=${env:HOME}/.codefleet-workspaces,target=/home/vibebox/.codefleet-workspaces,type=bind"
   ],
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=delegated",
