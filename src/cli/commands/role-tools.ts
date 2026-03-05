@@ -24,13 +24,11 @@ interface RoleToolsCommandOptions {
 }
 
 interface GlobalCliOptions {
-  dryRun?: boolean;
   actorId?: string;
   verbose?: boolean;
 }
 
 interface ResolvedGlobalOptions {
-  dryRun: boolean;
   actorId?: string;
   verbose: boolean;
 }
@@ -75,21 +73,6 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
       }
 
       const nextText = hasFile ? await fs.readFile(options.file as string, "utf8") : (options.text as string);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Requirements Update (dry-run)",
-            summary: [`Would update requirements (${nextText.length} chars).`],
-            result: {
-              source: hasFile ? `file:${options.file}` : "inline-text",
-              preview: nextText.slice(0, 200),
-            },
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = await service.writeRequirements(nextText);
       console.log(
         renderMutationMarkdown({
@@ -134,28 +117,6 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
               dependsOnEpicIds: options.dependsOn,
             }
           : undefined;
-
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: `Epic ${options.id ? "Update" : "Create"} (dry-run)`,
-            summary: [
-              options.id ? `Would update epic ${options.id}.` : "Would create a new epic.",
-              `title: ${options.title}`,
-            ],
-            result: {
-              id: options.id,
-              title: options.title,
-              kind: options.kind,
-              status: options.status,
-              visibility,
-              acceptanceTestIds: options.acceptanceTest,
-            },
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
 
       const updated = options.id
         ? await service.updateEpic({
@@ -212,28 +173,6 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         throw new Error("item upsert in create mode requires --epic <E-xxx>");
       }
 
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: `Item ${options.id ? "Update" : "Create"} (dry-run)`,
-            summary: [
-              options.id ? `Would update item ${options.id}.` : `Would create an item under epic ${options.epic}.`,
-              `title: ${options.title}`,
-            ],
-            result: {
-              id: options.id,
-              epicId: options.epic,
-              title: options.title,
-              kind: options.kind,
-              status: options.status,
-              acceptanceTestIds: options.acceptanceTest,
-            },
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = options.id
         ? await service.updateItem({
             id: options.id,
@@ -270,18 +209,6 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
     .option("--details <details>", "Question details")
     .action(async function handleQuestionAdd(this: Command, options: { title: string; details?: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Question Add (dry-run)",
-            summary: [`Would add open question: ${options.title}`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const added = await service.addQuestion({
         title: options.title,
         details: options.details,
@@ -331,17 +258,6 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
     .option("--note <text>", "Start note")
     .action(async function handleItemStart(this: Command, options: { id: string; note?: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Item Start (dry-run)",
-            summary: [`Would set ${options.id} to in-progress.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
       const updated = await service.updateItem({
         id: options.id,
         status: "in-progress",
@@ -364,17 +280,6 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
     .requiredOption("--note <text>", "Note text")
     .action(async function handleItemNote(this: Command, options: { id: string; note: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Item Note (dry-run)",
-            summary: [`Would append a note to ${options.id}.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
       const updated = await service.updateItem({ id: options.id, addNotes: [options.note], actorId: global.actorId });
       console.log(
         renderMutationMarkdown({
@@ -392,17 +297,6 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
     .option("--note <text>", "Completion note")
     .action(async function handleItemDone(this: Command, options: { id: string; note?: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Item Done (dry-run)",
-            summary: [`Would set ${options.id} to done.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
       const updated = await service.updateItem({
         id: options.id,
         status: "done",
@@ -436,17 +330,6 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
     .requiredOption("--answer <text>", "Answer text")
     .action(async function handleQuestionAnswer(this: Command, options: { id: string; answer: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Question Answer (dry-run)",
-            summary: [`Would answer ${options.id}.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
       const updated = await service.answerQuestion({ id: options.id, answer: options.answer, actorId: global.actorId });
       console.log(
         renderMutationMarkdown({
@@ -506,18 +389,6 @@ export function createGatekeeperToolsCommand(options: RoleToolsCommandOptions = 
       },
     ) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: `Test Case ${options.id ? "Update" : "Create"} (dry-run)`,
-            summary: [options.id ? `Would update ${options.id}.` : "Would create a new acceptance test."],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = options.id
         ? await acceptanceService.update({
             id: options.id,
@@ -536,7 +407,7 @@ export function createGatekeeperToolsCommand(options: RoleToolsCommandOptions = 
           });
 
       if (!options.id && options.epic.length > 0) {
-        await attachAcceptanceTestToBacklog(backlogService, updated.id, options.epic, options.item, global, global.dryRun);
+        await attachAcceptanceTestToBacklog(backlogService, updated.id, options.epic, options.item, global);
       }
 
       console.log(
@@ -572,18 +443,6 @@ export function createGatekeeperToolsCommand(options: RoleToolsCommandOptions = 
       },
     ) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Result Save (dry-run)",
-            summary: [`Would save execution result for ${options.id}.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const saved = await acceptanceService.addResult({
         testId: options.id,
         status: options.status,
@@ -639,18 +498,6 @@ export function createPolisherToolsCommand(options: RoleToolsCommandOptions = {}
     .requiredOption("--note <text>", "Polishing rationale")
     .action(async function handleAddNote(this: Command, options: { id: string; note: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Item Add Note (dry-run)",
-            summary: [`Would append a polishing note to ${options.id}.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = await service.updateItem({
         id: options.id,
         addNotes: [options.note],
@@ -700,18 +547,6 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
     .option("--note <text>", "Optional decision note")
     .action(async function handlePass(this: Command, options: { epic: string; note?: string }) {
       const global = resolveGlobalOptions(this);
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Decision Pass (dry-run)",
-            summary: [`Would mark ${options.epic} as done.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = await service.updateEpic({
         id: options.epic,
         status: "done",
@@ -737,18 +572,6 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
       const global = resolveGlobalOptions(this);
       validateChangesRequestedRationale(options.rationale);
 
-      if (global.dryRun) {
-        console.log(
-          renderMutationMarkdown({
-            title: "Decision Changes-Requested (dry-run)",
-            summary: [`Would mark ${options.epic} as changes-requested.`],
-            result: options,
-            verbose: global.verbose,
-          }),
-        );
-        return;
-      }
-
       const updated = await service.updateEpic({
         id: options.epic,
         status: "changes-requested",
@@ -770,7 +593,6 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
 }
 
 function addGlobalOptions(cmd: Command): void {
-  cmd.option("--dry-run", "Show what would happen without persisting changes");
   cmd.option("--actor-id <actorId>", "Current actor id for audit logs");
   cmd.option("--verbose", "Show verbose output");
 }
@@ -778,7 +600,6 @@ function addGlobalOptions(cmd: Command): void {
 function resolveGlobalOptions(command: Command): ResolvedGlobalOptions {
   const options = command.optsWithGlobals() as GlobalCliOptions;
   return {
-    dryRun: Boolean(options.dryRun),
     actorId: options.actorId,
     verbose: Boolean(options.verbose),
   };
@@ -790,12 +611,7 @@ async function attachAcceptanceTestToBacklog(
   epicIds: string[],
   itemIds: string[],
   global: ResolvedGlobalOptions,
-  dryRun: boolean,
 ): Promise<void> {
-  if (dryRun) {
-    return;
-  }
-
   for (const epicId of epicIds) {
     const epic = await backlogService.readEpic({ id: epicId });
     const nextIds = unique([...(epic.acceptanceTestIds ?? []), testId]);

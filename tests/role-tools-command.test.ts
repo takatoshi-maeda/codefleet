@@ -148,4 +148,12 @@ describe("role tools commands", () => {
     expect(output).toContain("## Subcommands");
     expect(output).toContain("## Typical Examples");
   });
+
+  it("rejects deprecated --dry-run option", async () => {
+    await expect(
+      createDeveloperToolsCli().parseAsync(["--dry-run", "item", "start", "--id", "I-104"], {
+        from: "user",
+      }),
+    ).rejects.toBeDefined();
+  });
 });
