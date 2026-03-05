@@ -23,6 +23,7 @@ import {
 import type { AgentEventQueueMessage } from "../../domain/events/agent-event-queue-message-model.js";
 import type { SystemEvent } from "../../events/router.js";
 import { createUlid } from "../../shared/ulid.js";
+import { resolveProjectIdFromGitRemote } from "../../domain/fleet/local-process-registry.js";
 
 interface FleetctlCommandOptions {
   commandName?: string;
@@ -63,6 +64,7 @@ interface DockerEnvironmentDependencies {
 }
 
 interface FleetPeerEndpointRecord {
+  projectId?: string;
   instanceId: string;
   pid: number;
   host: string;
@@ -75,6 +77,7 @@ interface FleetPeerEndpointRecord {
 interface FleetEndpointSnapshot {
   projectId: string;
   self: {
+    projectId?: string;
     pid: number;
     host: string;
     port: number;
@@ -99,6 +102,22 @@ interface FleetStatusEndpointInput {
 interface FleetStatusEndpointResolveOptions {
   fetchFn?: typeof fetch;
   timeoutMs?: number;
+  expectedProjectId?: string;
+}
+
+interface FleetApiStatusSnapshot {
+  summary?: "running" | "stopped" | "degraded";
+  agents?: unknown[];
+  sessions?: unknown[];
+  nodes?: FleetEndpointSnapshot;
+  endpointSnapshot?: FleetEndpointSnapshot;
+  apiServer?: {
+    state?: "running" | "stopped" | "error";
+    host?: string;
+    port?: number;
+    startedAt?: string | null;
+    lastError?: string;
+  };
 }
 
 const AGENT_RUNTIME_MANAGER_PID_PATH = path.join(".codefleet", "runtime", "agent-runtime-manager.pid");
@@ -193,8 +212,23 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--role <role>", "Filter by role")
     .action(async (options) => {
       const status = await service.status(options.role as AgentRole | undefined);
-      const endpointSnapshot = await resolveFleetEndpointsFromApi(status);
-      const output = endpointSnapshot ? { ...status, endpointSnapshot } : status;
+      const nodes = await resolveFleetEndpointsFromApi(status, {
+        expectedProjectId: await resolveProjectIdFromGitRemote(process.cwd()),
+      });
+      const apiFleetStatus = nodes
+        ? await fetchFleetStatusFromApi(nodes.self.host, nodes.self.port)
+        : null;
+      const resolvedNodes =
+        apiFleetStatus && apiFleetStatus.nodes
+          ? parseFleetEndpointSnapshot(apiFleetStatus.nodes)
+          : apiFleetStatus && apiFleetStatus.endpointSnapshot
+            ? parseFleetEndpointSnapshot(apiFleetStatus.endpointSnapshot)
+            : nodes;
+      const output = {
+        ...status,
+        ...(resolvedNodes ? { nodes: resolvedNodes } : {}),
+        ...(apiFleetStatus ? { apiFleetStatus } : {}),
+      };
       console.log(JSON.stringify(output, null, 2));
     });
 
@@ -562,12 +596,18 @@ export async function resolveFleetEndpointsFromApi(
 ): Promise<FleetEndpointSnapshot | null> {
   const fetchFn = options.fetchFn ?? fetch;
   const timeoutMs = options.timeoutMs ?? 1_500;
+  const expectedProjectId = options.expectedProjectId?.trim() ?? "";
   const candidates = buildFleetEndpointCandidates(input);
   for (const candidate of candidates) {
     const snapshot = await fetchFleetEndpointSnapshot(candidate.host, candidate.port, fetchFn, timeoutMs);
-    if (snapshot) {
-      return snapshot;
+    if (!snapshot) {
+      continue;
     }
+    // Prefer endpoint snapshots that belong to the current workspace project.
+    if (expectedProjectId.length > 0 && snapshot.projectId !== expectedProjectId) {
+      continue;
+    }
+    return snapshot;
   }
   return null;
 }
@@ -634,20 +674,55 @@ async function fetchFleetEndpointSnapshot(
   }
 }
 
+async function fetchFleetStatusFromApi(
+  host: string,
+  port: number,
+  fetchFn: typeof fetch = fetch,
+  timeoutMs: number = 1_500,
+): Promise<FleetApiStatusSnapshot | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  timer.unref();
+  try {
+    const response = await fetchFn(`http://${host}:${port}/api/codefleet/status`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const body = (await response.json()) as unknown;
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return null;
+    }
+    return body as FleetApiStatusSnapshot;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function parseFleetEndpointSnapshot(input: unknown): FleetEndpointSnapshot | null {
   if (!input || typeof input !== "object") {
     return null;
   }
   const payload = input as Record<string, unknown>;
-  const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
+  const projectIdFromRoot = typeof payload.projectId === "string" ? payload.projectId : null;
   const updatedAt = typeof payload.updatedAt === "string" ? payload.updatedAt : null;
   const self = parseFleetEndpointSelf(payload.self);
-  const peers = parseFleetEndpointPeers(payload.peers);
-  if (!projectId || !updatedAt || !self || !peers) {
+  const derivedProjectId = projectIdFromRoot ?? self?.projectId ?? null;
+  const peers = parseFleetEndpointPeers(payload.peers, derivedProjectId);
+  if (!derivedProjectId || !updatedAt || !self || !peers) {
     return null;
   }
   return {
-    projectId,
+    projectId: derivedProjectId,
     self,
     peers,
     updatedAt,
@@ -660,16 +735,17 @@ function parseFleetEndpointSelf(input: unknown): FleetEndpointSnapshot["self"] |
   }
   const payload = input as Record<string, unknown>;
   const pid = typeof payload.pid === "number" ? payload.pid : null;
+  const projectId = typeof payload.projectId === "string" ? payload.projectId : null;
   const host = typeof payload.host === "string" ? payload.host : null;
   const port = typeof payload.port === "number" ? payload.port : null;
   const endpoint = typeof payload.endpoint === "string" ? payload.endpoint : null;
   if (pid === null || !host || port === null || !endpoint) {
     return null;
   }
-  return { pid, host, port, endpoint };
+  return { pid, ...(projectId ? { projectId } : {}), host, port, endpoint };
 }
 
-function parseFleetEndpointPeers(input: unknown): FleetPeerEndpointRecord[] | null {
+function parseFleetEndpointPeers(input: unknown, fallbackProjectId: string | null): FleetPeerEndpointRecord[] | null {
   if (!Array.isArray(input)) {
     return null;
   }
@@ -679,6 +755,7 @@ function parseFleetEndpointPeers(input: unknown): FleetPeerEndpointRecord[] | nu
       return null;
     }
     const payload = peer as Record<string, unknown>;
+    const projectId = typeof payload.projectId === "string" ? payload.projectId : fallbackProjectId;
     const instanceId = typeof payload.instanceId === "string" ? payload.instanceId : null;
     const pid = typeof payload.pid === "number" ? payload.pid : null;
     const host = typeof payload.host === "string" ? payload.host : null;
@@ -689,7 +766,7 @@ function parseFleetEndpointPeers(input: unknown): FleetPeerEndpointRecord[] | nu
     if (!instanceId || pid === null || !host || port === null || !endpoint || !startedAt || !lastHeartbeat) {
       return null;
     }
-    peers.push({ instanceId, pid, host, port, endpoint, startedAt, lastHeartbeat });
+    peers.push({ ...(projectId ? { projectId } : {}), instanceId, pid, host, port, endpoint, startedAt, lastHeartbeat });
   }
   return peers;
 }

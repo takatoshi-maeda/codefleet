@@ -6,6 +6,7 @@ import type { Socket } from "node:net";
 import { mountMcpRoutes, type AgentMount } from "ai-kit/hono";
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { FleetObservabilityService } from "../../domain/fleet/fleet-observability-service.js";
+import { FleetService } from "../../domain/fleet/fleet-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/front-desk.js";
 import type { FeedbackNoteEventPublisher } from "../../agents/tools/feedback-note-agent-tools.js";
@@ -57,6 +58,7 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
     registryDir: options.registryDir,
     cwd: process.cwd(),
   });
+  const fleetService = new FleetService();
   const projectIdPromise = resolveProjectIdFromGitRemote(process.cwd());
 
   app.get("/api/codefleet/endpoints", async (c) => {
@@ -66,14 +68,15 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
     const resolvedPort = Number.isInteger(requestPort) && requestPort > 0 ? requestPort : port;
     const [projectId, peers] = await Promise.all([projectIdPromise, processRegistry.discover()]);
     const payload = {
-      projectId,
       self: {
+        projectId,
         pid: process.pid,
         host: resolvedHost,
         port: resolvedPort,
         endpoint: `http://${resolvedHost}:${resolvedPort}`,
       },
       peers: peers.map((peer) => ({
+        projectId: peer.projectId,
         instanceId: peer.instanceId,
         pid: peer.pid,
         host: peer.host,
@@ -86,6 +89,47 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
     };
     c.header("Cache-Control", "no-store");
     return c.json(payload);
+  });
+
+  app.get("/api/codefleet/status", async (c) => {
+    const requestUrl = new URL(c.req.url);
+    const resolvedHost = requestUrl.hostname || host;
+    const requestPort = Number(requestUrl.port);
+    const resolvedPort = Number.isInteger(requestPort) && requestPort > 0 ? requestPort : port;
+    const [payload, projectId, peers] = await Promise.all([fleetService.status(), projectIdPromise, processRegistry.discover()]);
+    const response = {
+      ...payload,
+      // This endpoint is served by a live MCP API server process, so its API
+      // state is always running from the caller's perspective.
+      apiServer: {
+        state: "running" as const,
+        host: resolvedHost,
+        port: resolvedPort,
+        startedAt: payload.apiServer?.startedAt ?? null,
+      },
+      nodes: {
+        self: {
+          projectId,
+          pid: process.pid,
+          host: resolvedHost,
+          port: resolvedPort,
+          endpoint: `http://${resolvedHost}:${resolvedPort}`,
+        },
+        peers: peers.map((peer) => ({
+          projectId: peer.projectId,
+          instanceId: peer.instanceId,
+          pid: peer.pid,
+          host: peer.host,
+          port: peer.port,
+          endpoint: `http://${peer.host}:${peer.port}`,
+          startedAt: peer.startedAt,
+          lastHeartbeat: peer.lastHeartbeat,
+        })),
+        updatedAt: new Date().toISOString(),
+      },
+    };
+    c.header("Cache-Control", "no-store");
+    return c.json(response);
   });
 
   const backlogService = options.backlogService ?? new BacklogService();

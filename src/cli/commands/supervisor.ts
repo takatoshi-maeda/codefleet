@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -15,7 +15,7 @@ interface SupervisorConfig {
 
 interface SupervisorCommandOptions {
   loadConfig?: (configPath: string) => Promise<{ configPath: string; fleets: string[] }>;
-  runFleetCommand?: (input: { cwd: string; args: string[] }) => Promise<SupervisorFleetExecutionResult>;
+  runFleetCommand?: (input: { cwd: string; args: string[]; streamOutput?: boolean }) => Promise<SupervisorFleetExecutionResult>;
 }
 
 interface SupervisorFleetExecutionResult {
@@ -35,8 +35,11 @@ interface SupervisorExecutionSummary {
   failed: number;
 }
 
+type FleetAggregateStatus = "running" | "stopped" | "degraded";
+
 const DEFAULT_SUPERVISOR_CONFIG_FILE = "default.json";
 const SUPERVISOR_CONFIG_DIRNAME = path.join("codefleet", "supervisor");
+const ACTIVE_FOREGROUND_CHILDREN = new Set<ChildProcess>();
 
 export function createSupervisorCommand(options: SupervisorCommandOptions = {}): Command {
   const loadConfig = options.loadConfig ?? loadSupervisorConfig;
@@ -49,20 +52,38 @@ export function createSupervisorCommand(options: SupervisorCommandOptions = {}):
     .command("up")
     .description("Start all fleets from supervisor config")
     .option("--config <path>", "Path to supervisor config JSON")
-    .action(async (parsedOptions: { config?: string }) => {
+    .option("-d, --detached", "Run fleet managers in background")
+    .action(async (parsedOptions: { config?: string; detached?: boolean }) => {
       const { configPath, fleets } = await loadConfig(resolveSupervisorConfigPath(parsedOptions.config));
-      const results = await executeAcrossFleets(fleets, (cwd) =>
-        runFleetCommand({ cwd, args: ["up", "--detached", "--skip-startup-preflight"] }),
-      );
-      const output = {
-        command: "up",
-        configPath,
-        summary: summarizeExecutions(results),
-        fleets: sanitizeResults(results),
-      };
-      console.log(JSON.stringify(output, null, 2));
-      if (output.summary.failed > 0) {
-        process.exitCode = 1;
+      const detached = Boolean(parsedOptions.detached);
+      const upArgs = ["up", ...(detached ? ["--detached"] : []), "--skip-startup-preflight"];
+      const shutdownState = { requested: false };
+      const teardownSignalHandling = detached ? null : attachForegroundSignalHandlers(shutdownState);
+      if (!detached) {
+        console.error(`[supervisor] starting ${fleets.length} fleet(s) in foreground`);
+      }
+      try {
+        const results = await executeAcrossFleets(fleets, (cwd) => {
+          if (!detached) {
+            console.error(`[supervisor] launching ${cwd}`);
+          }
+          return runFleetCommand({ cwd, args: upArgs, ...(detached ? {} : { streamOutput: true }) });
+        });
+        const output = {
+          command: "up",
+          configPath,
+          summary: summarizeExecutions(results),
+          fleets: sanitizeResults(results),
+        };
+        if (!detached && shutdownState.requested) {
+          console.error("[supervisor] shutdown sequence completed");
+        }
+        console.log(JSON.stringify(output, null, 2));
+        if (output.summary.failed > 0) {
+          process.exitCode = 1;
+        }
+      } finally {
+        teardownSignalHandling?.();
       }
     });
 
@@ -89,17 +110,27 @@ export function createSupervisorCommand(options: SupervisorCommandOptions = {}):
     .command("status")
     .description("Collect status from all fleets in supervisor config")
     .option("--config <path>", "Path to supervisor config JSON")
-    .action(async (parsedOptions: { config?: string }) => {
+    .option("--verbose", "Show full per-fleet status payload")
+    .action(async (parsedOptions: { config?: string; verbose?: boolean }) => {
       const { configPath, fleets } = await loadConfig(resolveSupervisorConfigPath(parsedOptions.config));
       const results = await executeAcrossFleets(fleets, (cwd) => runFleetCommand({ cwd, args: ["status"] }));
-      const output = {
-        command: "status",
-        configPath,
-        summary: summarizeExecutions(results),
-        fleets: sanitizeResults(results, { parseStatus: true }),
-      };
+      const executionSummary = summarizeExecutions(results);
+      const summary = summarizeFleetAggregateStatus(results);
+      const verbose = Boolean(parsedOptions.verbose);
+      const output = verbose
+        ? {
+            command: "status",
+            configPath,
+            summary,
+            executionSummary,
+            fleets: sanitizeResults(results, { parseStatus: true }),
+          }
+        : {
+            summary,
+            fleets: compactStatusResults(results),
+          };
       console.log(JSON.stringify(output, null, 2));
-      if (output.summary.failed > 0) {
+      if (executionSummary.failed > 0) {
         process.exitCode = 1;
       }
     });
@@ -253,9 +284,116 @@ function sanitizeResults(
   });
 }
 
+function compactStatusResults(
+  results: SupervisorFleetExecutionResult[],
+): Array<Record<string, unknown>> {
+  return results.map((result) => {
+    const parsedStatus = parseJsonIfPossible(result.stdout);
+    const statusRecord = asRecord(parsedStatus);
+    const summaryStatus = extractFleetSummaryStatus(statusRecord);
+    const apiFleetStatusRecord = statusRecord ? asRecord(statusRecord.apiFleetStatus) : null;
+    const summarySource = apiFleetStatusRecord ?? statusRecord;
+    const statusReason = buildStatusReason(summarySource, summaryStatus);
+    const nodes =
+      apiFleetStatusRecord && apiFleetStatusRecord.nodes !== undefined
+        ? apiFleetStatusRecord.nodes
+        : apiFleetStatusRecord && apiFleetStatusRecord.endpointSnapshot !== undefined
+          ? apiFleetStatusRecord.endpointSnapshot
+        : statusRecord
+          ? (statusRecord.nodes ?? statusRecord.endpointSnapshot ?? null)
+          : null;
+    const endpointRecord = asRecord(nodes);
+    const projectId = endpointRecord && typeof endpointRecord.projectId === "string" ? endpointRecord.projectId : null;
+    const selfRecord = endpointRecord ? asRecord(endpointRecord.self) : null;
+    const normalizedSelf =
+      selfRecord || projectId
+        ? {
+            ...(projectId ? { projectId } : {}),
+            ...(selfRecord ?? {}),
+          }
+        : null;
+    const peers = endpointRecord?.peers;
+    const updatedAt = endpointRecord?.updatedAt;
+    return {
+      cwd: result.cwd,
+      status: summaryStatus,
+      status_reason: statusReason,
+      ...(normalizedSelf ? { self: normalizedSelf } : {}),
+      ...(peers !== undefined ? { peers } : {}),
+      ...(updatedAt !== undefined ? { updatedAt } : {}),
+    };
+  });
+}
+
+function summarizeFleetAggregateStatus(results: SupervisorFleetExecutionResult[]): FleetAggregateStatus {
+  if (results.length === 0) {
+    return "stopped";
+  }
+  const statuses = results.map((result) => {
+    const parsedStatus = parseJsonIfPossible(result.stdout);
+    return extractFleetSummaryStatus(asRecord(parsedStatus));
+  });
+  if (statuses.every((status) => status === "running")) {
+    return "running";
+  }
+  if (statuses.every((status) => status === "stopped")) {
+    return "stopped";
+  }
+  return "degraded";
+}
+
+function extractFleetSummaryStatus(statusRecord: Record<string, unknown> | null): FleetAggregateStatus | null {
+  if (!statusRecord) {
+    return null;
+  }
+  const apiFleetStatusRecord = asRecord(statusRecord.apiFleetStatus);
+  const summarySource = apiFleetStatusRecord ?? statusRecord;
+  const summaryStatus = summarySource.summary;
+  if (summaryStatus === "running" || summaryStatus === "stopped" || summaryStatus === "degraded") {
+    return summaryStatus;
+  }
+  return null;
+}
+
+function buildStatusReason(statusRecord: Record<string, unknown> | null, summaryStatus: string | null): string | null {
+  if (!statusRecord || !summaryStatus) {
+    return null;
+  }
+
+  const agents = Array.isArray(statusRecord.agents) ? statusRecord.agents : [];
+  const sessions = Array.isArray(statusRecord.sessions) ? statusRecord.sessions : [];
+  const apiServer = asRecord(statusRecord.apiServer);
+  const apiState = typeof apiServer?.state === "string" ? apiServer.state : null;
+
+  if (summaryStatus === "running") {
+    return "all agents are running, sessions are ready, and api server is running";
+  }
+  if (summaryStatus === "stopped") {
+    return "all agents are stopped and api server is not running";
+  }
+
+  const nonRunningAgents = agents.filter((agent) => asRecord(agent)?.status !== "running").length;
+  const nonReadySessions = sessions.filter((session) => asRecord(session)?.status !== "ready").length;
+  const reasons: string[] = [];
+  if (nonRunningAgents > 0) {
+    reasons.push(`${nonRunningAgents}/${agents.length} agents are not running`);
+  }
+  if (nonReadySessions > 0) {
+    reasons.push(`${nonReadySessions}/${sessions.length} sessions are not ready`);
+  }
+  if (apiState && apiState !== "running") {
+    reasons.push(`api server state is ${apiState}`);
+  }
+  if (reasons.length === 0) {
+    return "components are in mixed states";
+  }
+  return reasons.join("; ");
+}
+
 async function runLocalCodefleetCommand(input: {
   cwd: string;
   args: string[];
+  streamOutput?: boolean;
 }): Promise<SupervisorFleetExecutionResult> {
   // 現在のCLIエントリポイントを再利用し、配布版(dist)と開発実行(tsx)の両方で
   // 同じ `codefleet` 実体へ委譲する。
@@ -271,19 +409,33 @@ async function runLocalCodefleetCommand(input: {
     env: process.env,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  if (input.streamOutput) {
+    ACTIVE_FOREGROUND_CHILDREN.add(child);
+  }
 
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
+  const stdoutRelay = createLinePrefixRelay(process.stdout, `[${path.basename(input.cwd) || input.cwd}] `);
+  const stderrRelay = createLinePrefixRelay(process.stderr, `[${path.basename(input.cwd) || input.cwd}] `);
 
   child.stdout?.on("data", (chunk: Buffer) => {
-    stdoutChunks.push(chunk.toString("utf8"));
+    const text = chunk.toString("utf8");
+    stdoutChunks.push(text);
+    if (input.streamOutput) {
+      stdoutRelay.write(text);
+    }
   });
   child.stderr?.on("data", (chunk: Buffer) => {
-    stderrChunks.push(chunk.toString("utf8"));
+    const text = chunk.toString("utf8");
+    stderrChunks.push(text);
+    if (input.streamOutput) {
+      stderrRelay.write(text);
+    }
   });
 
   const outcome = await new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null; error?: string }>((resolve) => {
     child.once("error", (error) => {
+      ACTIVE_FOREGROUND_CHILDREN.delete(child);
       resolve({
         exitCode: null,
         signal: null,
@@ -291,12 +443,20 @@ async function runLocalCodefleetCommand(input: {
       });
     });
     child.once("exit", (code, signal) => {
+      ACTIVE_FOREGROUND_CHILDREN.delete(child);
+      if (input.streamOutput) {
+        console.error(`[supervisor] fleet process exited cwd=${input.cwd} code=${String(code)} signal=${String(signal)}`);
+      }
       resolve({ exitCode: code, signal });
     });
   });
 
   const stdout = stdoutChunks.join("");
   const stderr = stderrChunks.join("");
+  if (input.streamOutput) {
+    stdoutRelay.flush();
+    stderrRelay.flush();
+  }
   const ok = !outcome.error && outcome.exitCode === 0;
 
   return {
@@ -321,4 +481,68 @@ function parseJsonIfPossible(raw: string): unknown | null {
   } catch {
     return null;
   }
+}
+
+function asRecord(input: unknown): Record<string, unknown> | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return null;
+  }
+  return input as Record<string, unknown>;
+}
+
+function createLinePrefixRelay(stream: NodeJS.WriteStream, prefix: string): { write: (chunk: string) => void; flush: () => void } {
+  let buffer = "";
+  return {
+    write(chunk: string) {
+      buffer += chunk;
+      const lines = buffer.split(/\r?\n/u);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        stream.write(`${prefix}${line}\n`);
+      }
+    },
+    flush() {
+      if (buffer.length > 0) {
+        stream.write(`${prefix}${buffer}\n`);
+        buffer = "";
+      }
+    },
+  };
+}
+
+function attachForegroundSignalHandlers(shutdownState: { requested: boolean }): () => void {
+  const watchedSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+  let forceExitArmed = false;
+  const onSignal = (signal: NodeJS.Signals): void => {
+    if (!shutdownState.requested) {
+      shutdownState.requested = true;
+      console.error(`[supervisor] received ${signal}; requesting graceful shutdown`);
+      const children = [...ACTIVE_FOREGROUND_CHILDREN].filter((child) => child.exitCode === null && child.signalCode === null);
+      console.error(`[supervisor] forwarding ${signal} to ${children.length} fleet process(es)`);
+      for (const child of children) {
+        try {
+          child.kill(signal);
+        } catch {
+          // Best-effort forwarding only.
+        }
+      }
+      forceExitArmed = true;
+      return;
+    }
+
+    if (forceExitArmed) {
+      console.error(`[supervisor] received ${signal} again; forcing exit`);
+      process.exit(signal === "SIGTERM" ? 143 : 130);
+    }
+  };
+
+  for (const signal of watchedSignals) {
+    process.on(signal, onSignal);
+  }
+
+  return () => {
+    for (const signal of watchedSignals) {
+      process.removeListener(signal, onSignal);
+    }
+  };
 }

@@ -31,6 +31,26 @@ describe("McpApiServer", () => {
       expect(statusResponse.status).toBe(200);
       expect(statusJson.state).toBe("ready");
 
+      const fleetStatusResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/status`);
+      const fleetStatusJson = (await fleetStatusResponse.json()) as {
+        summary?: string;
+        agents?: unknown[];
+        sessions?: unknown[];
+        nodes?: { self?: { port?: number; projectId?: string } };
+        apiServer?: { state?: string; host?: string; port?: number };
+      };
+      expect(fleetStatusResponse.status).toBe(200);
+      expect(typeof fleetStatusJson.summary).toBe("string");
+      expect(Array.isArray(fleetStatusJson.agents)).toBe(true);
+      expect(Array.isArray(fleetStatusJson.sessions)).toBe(true);
+      expect(fleetStatusJson.apiServer).toMatchObject({
+        state: "running",
+        host: "127.0.0.1",
+        port,
+      });
+      expect(fleetStatusJson.nodes?.self?.port).toBe(port);
+      expect(typeof fleetStatusJson.nodes?.self?.projectId).toBe("string");
+
       const corsResponse = await fetch(`http://127.0.0.1:${port}/api/mcp`, {
         headers: { origin: "http://localhost:8081" },
       });
@@ -66,9 +86,10 @@ describe("McpApiServer", () => {
       const endpointsResponse = await fetch(`http://127.0.0.1:${secondaryStatus.port}/api/codefleet/endpoints`);
       expect(endpointsResponse.status).toBe(200);
       const endpointsJson = (await endpointsResponse.json()) as {
-        self?: { port?: number };
+        self?: { port?: number; projectId?: string };
       };
       expect(endpointsJson.self?.port).toBe(secondaryStatus.port);
+      expect(typeof endpointsJson.self?.projectId).toBe("string");
     } finally {
       await secondary.stop();
       await primary.stop();
@@ -349,12 +370,11 @@ describe("McpApiServer", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("cache-control")).toContain("no-store");
       const json = (await response.json()) as {
-        projectId: string;
-        self?: { host?: string; port?: number; endpoint?: string };
-        peers?: Array<{ instanceId?: string; host?: string; port?: number; endpoint?: string }>;
+        self?: { projectId?: string; host?: string; port?: number; endpoint?: string };
+        peers?: Array<{ projectId?: string; instanceId?: string; host?: string; port?: number; endpoint?: string }>;
       };
-      expect(json.projectId).toBe(projectId);
       expect(json.self).toEqual({
+        projectId,
         pid: process.pid,
         host: "127.0.0.1",
         port,
@@ -362,6 +382,7 @@ describe("McpApiServer", () => {
       });
       expect(json.peers).toEqual([
         {
+          projectId,
           instanceId: "cf-peer-live",
           pid: 1,
           host: "127.0.0.1",
@@ -371,6 +392,7 @@ describe("McpApiServer", () => {
           lastHeartbeat: now,
         },
         {
+          projectId: "other/repo",
           instanceId: "cf-peer-other-project",
           pid: livePeerPid,
           host: "127.0.0.1",

@@ -51,7 +51,7 @@ describe("supervisor command", () => {
     expect(loaded.fleets).toEqual([path.resolve(fleetA), path.resolve(path.relative(process.cwd(), fleetB))]);
   });
 
-  it("dispatches up to each fleet with detached startup flags", async () => {
+  it("dispatches up to each fleet in foreground mode by default", async () => {
     const calls: Array<{ cwd: string; args: string[] }> = [];
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
@@ -74,14 +74,38 @@ describe("supervisor command", () => {
     await command.parseAsync(["up"], { from: "user" });
 
     expect(calls).toEqual([
-      { cwd: "/tmp/a", args: ["up", "--detached", "--skip-startup-preflight"] },
-      { cwd: "/tmp/b", args: ["up", "--detached", "--skip-startup-preflight"] },
+      { cwd: "/tmp/a", args: ["up", "--skip-startup-preflight"], streamOutput: true },
+      { cwd: "/tmp/b", args: ["up", "--skip-startup-preflight"], streamOutput: true },
     ]);
     expect(logSpy).toHaveBeenCalledTimes(1);
     expect(JSON.parse(logSpy.mock.calls[0]?.[0] ?? "{}")).toMatchObject({
       command: "up",
       summary: { total: 2, succeeded: 2, failed: 0 },
     });
+  });
+
+  it("dispatches up with detached flag when -d is specified", async () => {
+    const calls: Array<{ cwd: string; args: string[] }> = [];
+
+    const command = createSupervisorCommand({
+      loadConfig: async () => ({ configPath: "/tmp/supervisor.json", fleets: ["/tmp/a"] }),
+      runFleetCommand: async (input) => {
+        calls.push(input);
+        return {
+          cwd: input.cwd,
+          args: input.args,
+          ok: true,
+          exitCode: 0,
+          signal: null,
+          stdout: "",
+          stderr: "",
+        };
+      },
+    });
+
+    await command.parseAsync(["up", "-d"], { from: "user" });
+
+    expect(calls).toEqual([{ cwd: "/tmp/a", args: ["up", "--detached", "--skip-startup-preflight"] }]);
   });
 
   it("dispatches down --all to each fleet", async () => {
@@ -119,7 +143,14 @@ describe("supervisor command", () => {
         ok: true,
         exitCode: 0,
         signal: null,
-        stdout: JSON.stringify({ summary: { running: 3 } }),
+        stdout: JSON.stringify({
+          summary: "running",
+          nodes: {
+            self: { endpoint: "http://127.0.0.1:3290", projectId: "acme/project" },
+            peers: [],
+            updatedAt: "2026-03-05T00:00:00.000Z",
+          },
+        }),
         stderr: "",
       }),
     });
@@ -127,8 +158,125 @@ describe("supervisor command", () => {
     await command.parseAsync(["status"], { from: "user" });
 
     expect(JSON.parse(logSpy.mock.calls[0]?.[0] ?? "{}")).toMatchObject({
+      summary: "running",
+      fleets: [
+        {
+          cwd: "/tmp/a",
+          status: "running",
+          status_reason: "all agents are running, sessions are ready, and api server is running",
+          self: { endpoint: "http://127.0.0.1:3290", projectId: "acme/project" },
+          peers: [],
+          updatedAt: "2026-03-05T00:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("includes status_reason for degraded status", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const command = createSupervisorCommand({
+      loadConfig: async () => ({ configPath: "/tmp/supervisor.json", fleets: ["/tmp/a"] }),
+      runFleetCommand: async (input) => ({
+        cwd: input.cwd,
+        args: input.args,
+        ok: true,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify({
+          summary: "degraded",
+          agents: [{ status: "running" }, { status: "stopped" }],
+          sessions: [{ status: "ready" }, { status: "disconnected" }],
+          apiServer: { state: "stopped" },
+          nodes: {
+            self: { endpoint: "http://127.0.0.1:3290", projectId: "acme/project" },
+            peers: [],
+            updatedAt: "2026-03-05T00:00:00.000Z",
+          },
+        }),
+        stderr: "",
+      }),
+    });
+
+    await command.parseAsync(["status"], { from: "user" });
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] ?? "{}")).toMatchObject({
+      fleets: [
+        {
+          cwd: "/tmp/a",
+          status: "degraded",
+          status_reason: "1/2 agents are not running; 1/2 sessions are not ready; api server state is stopped",
+        },
+      ],
+    });
+  });
+
+  it("prefers apiFleetStatus summary over local status summary", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const command = createSupervisorCommand({
+      loadConfig: async () => ({ configPath: "/tmp/supervisor.json", fleets: ["/tmp/a"] }),
+      runFleetCommand: async (input) => ({
+        cwd: input.cwd,
+        args: input.args,
+        ok: true,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify({
+          summary: "degraded",
+          apiFleetStatus: {
+            summary: "running",
+            agents: [{ status: "running" }],
+            sessions: [{ status: "ready" }],
+            apiServer: { state: "running" },
+          },
+          nodes: {
+            self: { endpoint: "http://127.0.0.1:3290", projectId: "acme/project" },
+            peers: [],
+            updatedAt: "2026-03-05T00:00:00.000Z",
+          },
+        }),
+        stderr: "",
+      }),
+    });
+
+    await command.parseAsync(["status"], { from: "user" });
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] ?? "{}")).toMatchObject({
+      fleets: [
+        {
+          cwd: "/tmp/a",
+          status: "running",
+          status_reason: "all agents are running, sessions are ready, and api server is running",
+        },
+      ],
+    });
+  });
+
+  it("prints full status payload when --verbose is specified", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const command = createSupervisorCommand({
+      loadConfig: async () => ({ configPath: "/tmp/supervisor.json", fleets: ["/tmp/a"] }),
+      runFleetCommand: async (input) => ({
+        cwd: input.cwd,
+        args: input.args,
+        ok: true,
+        exitCode: 0,
+        signal: null,
+        stdout: JSON.stringify({ summary: "running", nodes: { self: { endpoint: "http://127.0.0.1:1" } } }),
+        stderr: "",
+      }),
+    });
+
+    await command.parseAsync(["status", "--verbose"], { from: "user" });
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] ?? "{}")).toMatchObject({
       command: "status",
-      fleets: [{ cwd: "/tmp/a", status: { summary: { running: 3 } } }],
+      configPath: "/tmp/supervisor.json",
+      summary: "running",
+      executionSummary: { total: 1, succeeded: 1, failed: 0 },
+      fleets: [{ cwd: "/tmp/a", status: { summary: "running" } }],
     });
   });
 
