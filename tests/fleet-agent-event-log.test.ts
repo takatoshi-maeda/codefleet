@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAgentEventConsoleLog,
   formatAgentEventHumanLog,
   formatAgentEventNotificationLog,
   shouldSuppressNotificationMethod,
@@ -161,6 +162,33 @@ describe("fleet agent event log formatting", () => {
     });
   });
 
+  it("emits reasoning text from codex/event/item_completed when item type is Reasoning", () => {
+    const record = formatAgentEventConsoleLog({
+      agentId: "gatekeeper-1",
+      method: "codex/event/item_completed",
+      receivedAt: "2026-03-05T06:42:01.401Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "item_completed",
+          item: {
+            type: "Reasoning",
+            id: "reason-1",
+            content: [{ type: "Text", text: "**Planning page inspection**" }],
+          },
+        },
+      },
+    });
+
+    expect(record).toEqual({
+      ts: "2026-03-05T06:42:01.401Z",
+      level: "info",
+      event: "fleet.agent.output",
+      agentId: "gatekeeper-1",
+      message: "reasoning: **Planning page inspection**",
+    });
+  });
+
   it("emits tool execution start/end logs from codex exec events", () => {
     const begin = formatAgentEventHumanLog({
       agentId: "gatekeeper-1",
@@ -203,6 +231,92 @@ describe("fleet agent event log formatting", () => {
       level: "info",
       agentId: "gatekeeper-1",
       message: "tool end: /bin/zsh -lc pwd && ls -la exit=0",
+    });
+  });
+
+  it("does not emit non-target console logs such as summarized events", () => {
+    const record = formatAgentEventConsoleLog({
+      agentId: "developer-1",
+      method: "codex/event/task_started",
+      receivedAt: "2026-03-05T10:00:00.000Z",
+      params: {
+        id: "0",
+        msg: {
+          type: "task_started",
+        },
+      },
+    });
+
+    expect(record).toBeNull();
+  });
+
+  it("does not emit non-target console logs for suppressed methods", () => {
+    const record = formatAgentEventConsoleLog({
+      agentId: "developer-1",
+      method: "item/agentMessage/delta",
+      receivedAt: "2026-03-05T10:00:00.000Z",
+      params: {
+        delta: "partial",
+      },
+    });
+
+    expect(record).toBeNull();
+  });
+
+  it("suppresses item started summary logs for Reasoning lifecycle events", () => {
+    const started = formatAgentEventConsoleLog({
+      agentId: "developer-1",
+      method: "codex/event/item_started",
+      receivedAt: "2026-03-05T10:00:00.000Z",
+      params: {
+        msg: {
+          type: "item_started",
+          item: { type: "Reasoning" },
+        },
+      },
+    });
+    expect(started).toBeNull();
+  });
+
+  it("emits reasoning placeholder when Reasoning item_completed has no text", () => {
+    const completedWithoutText = formatAgentEventConsoleLog({
+      agentId: "developer-1",
+      method: "codex/event/item_completed",
+      receivedAt: "2026-03-05T10:00:01.000Z",
+      params: {
+        msg: {
+          type: "item_completed",
+          item: { type: "Reasoning", content: [] },
+        },
+      },
+    });
+    expect(completedWithoutText).toEqual({
+      ts: "2026-03-05T10:00:01.000Z",
+      level: "info",
+      event: "fleet.agent.output",
+      agentId: "developer-1",
+      message: "reasoning: <empty>",
+    });
+  });
+
+  it("emits assistant messages to console log stream", () => {
+    const record = formatAgentEventConsoleLog({
+      agentId: "developer-1",
+      method: "codex/event/agent_message",
+      receivedAt: "2026-03-05T10:00:02.000Z",
+      params: {
+        msg: {
+          type: "agent_message",
+          message: "final answer",
+        },
+      },
+    });
+    expect(record).toEqual({
+      ts: "2026-03-05T10:00:02.000Z",
+      level: "info",
+      event: "fleet.agent.output",
+      agentId: "developer-1",
+      message: "assistant: final answer",
     });
   });
 });

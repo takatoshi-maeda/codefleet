@@ -13,6 +13,7 @@ const MAX_LOG_STRING_LENGTH = 180;
 const MAX_LOG_ARRAY_LENGTH = 4;
 const MAX_LOG_OBJECT_KEYS = 10;
 const MAX_LOG_DEPTH = 4;
+const EMPTY_REASONING_PLACEHOLDER = "<empty>";
 
 export interface FleetAgentEventLogRecord {
   ts: string;
@@ -30,6 +31,31 @@ export interface FleetAgentHumanLogRecord {
   level: "info" | "warn" | "error";
   agentId: string;
   message: string;
+}
+
+export type FleetAgentConsoleLogRecord =
+  | {
+      ts: string;
+      level: "info" | "warn" | "error";
+      event: "fleet.agent.output";
+      agentId: string;
+      message: string;
+    }
+  | {
+      ts: string;
+      level: "info";
+      event: "fleet.agent.event";
+      agentId: string;
+      method: string;
+      summary: string;
+    };
+
+export interface FleetAgentConsoleLogDecision {
+  willEmit: boolean;
+  reason: "allowed" | "human_log_unavailable" | "message_not_allowed";
+  message?: string;
+  level?: "info" | "warn" | "error";
+  extractedHumanMessage?: string;
 }
 
 export function shouldSuppressNotificationMethod(method: string): boolean {
@@ -98,20 +124,30 @@ export function formatAgentEventHumanLog(notification: AppServerNotification): F
   if (notification.method === "codex/event/item_completed") {
     const msg = asRecord(notification.params?.msg);
     const item = asRecord(msg?.item);
-    if (item?.type !== "AgentMessage") {
-      return null;
+    if (item?.type === "AgentMessage") {
+      const textFromContent = extractTextFromContent(item.content);
+      if (!textFromContent) {
+        return null;
+      }
+      return {
+        ts: notification.receivedAt,
+        level: "info",
+        agentId: notification.agentId,
+        message: `assistant: ${textFromContent}`,
+      };
     }
 
-    const textFromContent = extractAgentMessageTextFromContent(item.content);
-    if (!textFromContent) {
-      return null;
+    if (item?.type === "Reasoning") {
+      const text = extractReasoningTextFromItem(item);
+      return {
+        ts: notification.receivedAt,
+        level: "info",
+        agentId: notification.agentId,
+        message: `reasoning: ${text ?? EMPTY_REASONING_PLACEHOLDER}`,
+      };
     }
-    return {
-      ts: notification.receivedAt,
-      level: "info",
-      agentId: notification.agentId,
-      message: `assistant: ${textFromContent}`,
-    };
+
+    return null;
   }
 
   if (notification.method === "codex/event/agent_message") {
@@ -188,6 +224,54 @@ export function formatAgentEventHumanLog(notification: AppServerNotification): F
   }
 
   return null;
+}
+
+export function formatAgentEventConsoleLog(notification: AppServerNotification): FleetAgentConsoleLogRecord | null {
+  const decision = diagnoseAgentEventConsoleLog(notification);
+  if (!decision.willEmit || !decision.message) {
+    return null;
+  }
+
+  return {
+    ts: notification.receivedAt,
+    level: decision.level ?? "info",
+    event: "fleet.agent.output",
+    agentId: notification.agentId,
+    message: decision.message,
+  };
+}
+
+export function diagnoseAgentEventConsoleLog(notification: AppServerNotification): FleetAgentConsoleLogDecision {
+  const human = formatAgentEventHumanLog(notification);
+  if (!human) {
+    return {
+      willEmit: false,
+      reason: "human_log_unavailable",
+    };
+  }
+  if (!isAllowedConsoleMessage(human.message)) {
+    return {
+      willEmit: false,
+      reason: "message_not_allowed",
+      extractedHumanMessage: human.message,
+    };
+  }
+  return {
+    willEmit: true,
+    reason: "allowed",
+    message: human.message,
+    level: human.level,
+    extractedHumanMessage: human.message,
+  };
+}
+
+function isAllowedConsoleMessage(message: string): boolean {
+  return (
+    message.startsWith("tool start: ") ||
+    message.startsWith("tool end: ") ||
+    message.startsWith("reasoning: ") ||
+    message.startsWith("assistant: ")
+  );
 }
 
 function summarizeNotificationParams(method: string, params: Record<string, unknown> | undefined): unknown {
@@ -372,7 +456,7 @@ function truncateText(value: string): string {
   return `${value.slice(0, MAX_LOG_STRING_LENGTH)}... [truncated ${value.length - MAX_LOG_STRING_LENGTH} chars]`;
 }
 
-function extractAgentMessageTextFromContent(content: unknown): string | null {
+function extractTextFromContent(content: unknown): string | null {
   if (!Array.isArray(content) || content.length === 0) {
     return null;
   }
@@ -394,4 +478,16 @@ function extractAgentMessageTextFromContent(content: unknown): string | null {
   }
   const merged = parts.join("\n").trim();
   return merged.length > 0 ? merged : null;
+}
+
+function extractReasoningTextFromItem(item: Record<string, unknown>): string | null {
+  const textFromContent = extractTextFromContent(item.content);
+  if (textFromContent) {
+    return textFromContent;
+  }
+  const text = item.text;
+  if (typeof text === "string" && text.trim().length > 0) {
+    return text.trim();
+  }
+  return null;
 }

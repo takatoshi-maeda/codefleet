@@ -13,7 +13,7 @@ import { McpApiServerLifecycle } from "../../api/mcp/fleet-api-server-lifecycle.
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { AgentEventQueueWorkerService } from "../../domain/events/agent-event-queue-worker-service.js";
-import { AppServerClient } from "../../infra/appserver/app-server-client.js";
+import { AppServerClient, type AppServerNotification } from "../../infra/appserver/app-server-client.js";
 import { BacklogPoller } from "../../events/watchers/backlog-poller.js";
 import {
   assertDocsUpdateSubmoduleIsValid,
@@ -22,7 +22,8 @@ import {
   resolveDocsUpdateSubmodulePaths,
 } from "../../events/watchers/docs-update-submodule-watcher.js";
 import {
-  formatAgentEventHumanLog,
+  diagnoseAgentEventConsoleLog,
+  formatAgentEventConsoleLog,
   formatAgentEventNotificationLog,
   shouldSuppressNotificationMethod,
 } from "../logging/fleet-agent-event-log.js";
@@ -141,6 +142,10 @@ const DEFAULT_PLAYWRIGHT_PORT = 9333;
 const PLAYWRIGHT_READY_TIMEOUT_MS = 10_000;
 const PLAYWRIGHT_SHUTDOWN_TIMEOUT_MS = 10_000;
 const FORCE_EXIT_SIGNAL_ARM_DELAY_MS = 250;
+const DEBUG_REASONING_LOGGING_ENABLED =
+  process.env.CODEFLEET_DEBUG_REASONING === "1" || process.env.CODEFLEET_DEBUG_REASONING === "true";
+const DEBUG_APP_SERVER_EVENTS_ENV_ENABLED =
+  process.env.CODEFLEET_DEBUG_APP_SERVER_EVENTS === "1" || process.env.CODEFLEET_DEBUG_APP_SERVER_EVENTS === "true";
 type LogMode = "human" | "jsonl";
 const ANSI_RESET = "\u001b[0m";
 const ANSI_BOLD = "\u001b[1m";
@@ -155,11 +160,16 @@ const agentLogWriteChainByAgentId = new Map<string, Promise<void>>();
 
 export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Command {
   let logMode: LogMode = "human";
+  let debugAppServerEvents = DEBUG_APP_SERVER_EVENTS_ENV_ENABLED;
   const emit = (record: object): void => emitLog(record, logMode);
   const lastAssistantMessageByAgent = new Map<string, string>();
   const suppressedEventCountByAgent = new Map<string, number>();
   const appServerClient = new AppServerClient({
     onNotification: (notification) => {
+      if (debugAppServerEvents) {
+        // Raw notification payloads are emitted only when explicitly requested.
+        console.error(formatAppServerNotificationDebugLine(notification));
+      }
       if (logMode === "jsonl") {
         if (shouldSuppressNotificationMethod(notification.method)) {
           suppressedEventCountByAgent.set(
@@ -180,22 +190,17 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         return;
       }
 
-      const humanLog = formatAgentEventHumanLog(notification);
-      if (humanLog) {
-        if (humanLog.message.startsWith("assistant: ")) {
-          const previous = lastAssistantMessageByAgent.get(humanLog.agentId);
-          if (previous === humanLog.message) {
+      emitReasoningDebugLog(notification);
+      const consoleLog = formatAgentEventConsoleLog(notification);
+      if (consoleLog) {
+        if (consoleLog.event === "fleet.agent.output" && consoleLog.message.startsWith("assistant: ")) {
+          const previous = lastAssistantMessageByAgent.get(consoleLog.agentId);
+          if (previous === consoleLog.message) {
             return;
           }
-          lastAssistantMessageByAgent.set(humanLog.agentId, humanLog.message);
+          lastAssistantMessageByAgent.set(consoleLog.agentId, consoleLog.message);
         }
-        emit({
-          ts: humanLog.ts,
-          level: humanLog.level,
-          event: "fleet.agent.output",
-          agentId: humanLog.agentId,
-          message: humanLog.message,
-        });
+        emit(consoleLog);
       }
     },
   });
@@ -259,10 +264,13 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--developers <count>", "Number of Developer agents", "1")
     .option("--polishers <count>", "Number of Polisher agents", "1")
     .option("--reviewers <count>", "Number of Reviewer agents", "1")
+    .option("--debug-app-server-events", "Print raw Codex AppServer notifications for debugging", false)
     .option("--skip-startup-preflight", "Skip internal startup preflight checks", false)
     .action(async (options) => {
+      await ensureNoConflictingRuntimeManagerIsRunning();
       await assertDockerContainerEnvironment();
       logMode = Boolean(options.verbose) ? "jsonl" : "human";
+      debugAppServerEvents = DEBUG_APP_SERVER_EVENTS_ENV_ENABLED || Boolean(options.debugAppServerEvents);
       const requestedAt = new Date().toISOString();
       const gatekeepers = Number(options.gatekeepers);
       const developers = Number(options.developers);
@@ -335,6 +343,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           polishers,
           reviewers,
           verbose: Boolean(options.verbose),
+          debugAppServerEvents,
           lang,
           epicReadyPollIntervalMs,
           docsUpdateSubmoduleDir: docsUpdatePaths.submoduleDir,
@@ -500,6 +509,98 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     });
 
   return cmd;
+}
+
+function emitReasoningDebugLog(notification: { agentId: string; method: string; params?: Record<string, unknown> }): void {
+  if (!DEBUG_REASONING_LOGGING_ENABLED) {
+    return;
+  }
+  const reasoningRelated =
+    notification.method === "codex/event/agent_reasoning" ||
+    notification.method === "codex/event/item_started" ||
+    notification.method === "codex/event/item_completed";
+  if (!reasoningRelated) {
+    return;
+  }
+
+  const itemType = readNestedString(notification.params, ["msg", "item", "type"]);
+  if (
+    (notification.method === "codex/event/item_started" || notification.method === "codex/event/item_completed") &&
+    itemType !== "Reasoning"
+  ) {
+    return;
+  }
+
+  const decision = diagnoseAgentEventConsoleLog({
+    agentId: notification.agentId,
+    method: notification.method,
+    params: notification.params,
+    receivedAt: new Date().toISOString(),
+  });
+  const humanMessagePreview =
+    decision.extractedHumanMessage && decision.extractedHumanMessage.length > 0
+      ? decision.extractedHumanMessage.slice(0, 180)
+      : "<none>";
+  const reasoningTextLength = getReasoningTextLength(notification.params);
+  console.error(
+    `[codefleet:fleetctl:debug] agent=${notification.agentId} method=${notification.method} itemType=${itemType ?? "<none>"} reason=${decision.reason} willEmit=${decision.willEmit ? "true" : "false"} reasoningTextLength=${reasoningTextLength} humanMessage=${JSON.stringify(humanMessagePreview)}`,
+  );
+}
+
+export function formatAppServerNotificationDebugLine(notification: AppServerNotification): string {
+  const payload = {
+    ts: notification.receivedAt,
+    event: "fleet.app-server.notification",
+    agentId: notification.agentId,
+    method: notification.method,
+    params: notification.params ?? null,
+  };
+  return `[codefleet:fleetctl:app-server] ${JSON.stringify(payload)}`;
+}
+
+function getReasoningTextLength(params: Record<string, unknown> | undefined): number {
+  const direct = readNestedString(params, ["msg", "text"]);
+  if (direct) {
+    return direct.length;
+  }
+  const itemText = readNestedString(params, ["msg", "item", "text"]);
+  if (itemText) {
+    return itemText.length;
+  }
+  const content = readNestedValue(params, ["msg", "item", "content"]);
+  if (!Array.isArray(content)) {
+    return 0;
+  }
+  const merged = content
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry;
+      }
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return "";
+      }
+      const text = (entry as Record<string, unknown>).text;
+      return typeof text === "string" ? text : "";
+    })
+    .join("\n")
+    .trim();
+  return merged.length;
+}
+
+function readNestedString(value: unknown, path: string[]): string | null {
+  const resolved = readNestedValue(value, path);
+  return typeof resolved === "string" ? resolved : null;
+}
+
+function readNestedValue(value: unknown, path: string[]): unknown {
+  let current: unknown = value;
+  for (const segment of path) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return null;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return current;
 }
 
 export async function runFleetUpPreflight(deps: FleetUpPreflightDependencies): Promise<void> {
@@ -1762,6 +1863,7 @@ async function spawnDetachedAgentRuntimeManagerProcess(input: {
   polishers: number;
   reviewers: number;
   verbose: boolean;
+  debugAppServerEvents: boolean;
   lang?: string;
   epicReadyPollIntervalMs: number;
   docsUpdateSubmoduleDir: string;
@@ -1784,6 +1886,9 @@ async function spawnDetachedAgentRuntimeManagerProcess(input: {
   ];
   if (input.verbose) {
     args.push("--verbose");
+  }
+  if (input.debugAppServerEvents) {
+    args.push("--debug-app-server-events");
   }
   if (input.lang) {
     args.push("--lang", input.lang);
@@ -1833,6 +1938,29 @@ async function readAgentRuntimeManagerPid(): Promise<number | null> {
     }
     throw error;
   }
+}
+
+export async function ensureNoConflictingRuntimeManagerIsRunning(
+  deps: {
+    readPid?: () => Promise<number | null>;
+    isAlive?: (pid: number) => boolean;
+    removePidFile?: () => Promise<void>;
+  } = {},
+): Promise<void> {
+  const readPid = deps.readPid ?? readAgentRuntimeManagerPid;
+  const isAlive = deps.isAlive ?? isProcessAlive;
+  const removePidFile = deps.removePidFile ?? removeAgentRuntimeManagerPidFile;
+  const existingPid = await readPid();
+  if (!existingPid || existingPid === process.pid) {
+    return;
+  }
+  if (!isAlive(existingPid)) {
+    await removePidFile();
+    return;
+  }
+  throw new Error(
+    `fleet up aborted: another agent runtime manager is already running (pid=${existingPid}). Run 'codefleet down --all' first.`,
+  );
 }
 
 async function readPlaywrightServerPid(): Promise<number | null> {
@@ -1941,6 +2069,12 @@ function humanMessageForEvent(event: string, payload: Record<string, unknown>): 
   if (event === "fleet.agent.output") {
     const message = typeof payload.message === "string" ? payload.message : "";
     return message;
+  }
+
+  if (event === "fleet.agent.event") {
+    const summary = typeof payload.summary === "string" ? payload.summary : "agent event";
+    const method = typeof payload.method === "string" ? payload.method : "";
+    return method ? `${summary} (${method})` : summary;
   }
 
   if (event === "fleet.agent.state") {
