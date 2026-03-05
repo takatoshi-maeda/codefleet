@@ -101,7 +101,7 @@ interface FleetStatusEndpointResolveOptions {
   timeoutMs?: number;
 }
 
-const SUPERVISOR_PID_PATH = path.join(".codefleet", "runtime", "supervisor.pid");
+const AGENT_RUNTIME_MANAGER_PID_PATH = path.join(".codefleet", "runtime", "agent-runtime-manager.pid");
 const PLAYWRIGHT_SERVER_PID_PATH = path.join(".codefleet", "runtime", "playwright-server.pid");
 const DEFAULT_RUNTIME_DIR = path.join(".codefleet", "runtime");
 const DEFAULT_AGENT_LOG_DIR = path.join(".codefleet", "logs", "agents");
@@ -244,7 +244,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       }
 
       if (Boolean(options.detached)) {
-        const detachedPid = await spawnDetachedSupervisorProcess({
+        const detachedPid = await spawnDetachedAgentRuntimeManagerProcess({
           gatekeepers,
           developers,
           polishers,
@@ -258,7 +258,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         emit({
           ts: requestedAt,
           level: "info",
-          event: "fleet.supervisor.detached",
+          event: "fleet.agent_runtime_manager.detached",
           pid: detachedPid,
           requestedRoles: {
             orchestrators: 1,
@@ -339,11 +339,11 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         emit,
       });
 
-      await writeSupervisorPid(process.pid);
+      await writeAgentRuntimeManagerPid(process.pid);
       try {
         await waitForShutdownSignal(service, queueWorker, queueService, emit, epicReadyPollIntervalMs);
       } finally {
-        await removeSupervisorPidFile();
+        await removeAgentRuntimeManagerPidFile();
       }
       // Foreground `fleetctl up` is expected to terminate after graceful shutdown even if
       // third-party internals leave residual handles alive. Exiting explicitly prevents hangs.
@@ -358,10 +358,14 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .action(async (options) => {
       validateTargetSelection(Boolean(options.all), options.role as AgentRole | undefined, "down");
       if (Boolean(options.all)) {
-        const supervisorPid = await readSupervisorPid();
-        if (supervisorPid !== null && supervisorPid !== process.pid && isProcessAlive(supervisorPid)) {
-          process.kill(supervisorPid, "SIGTERM");
-          await waitForProcessExit(supervisorPid, 10_000);
+        const agentRuntimeManagerPid = await readAgentRuntimeManagerPid();
+        if (
+          agentRuntimeManagerPid !== null &&
+          agentRuntimeManagerPid !== process.pid &&
+          isProcessAlive(agentRuntimeManagerPid)
+        ) {
+          process.kill(agentRuntimeManagerPid, "SIGTERM");
+          await waitForProcessExit(agentRuntimeManagerPid, 10_000);
         }
         await stopPlaywrightServerFromPidFile();
       }
@@ -1581,7 +1585,7 @@ async function stopPlaywrightServerFromPidFile(): Promise<void> {
   await stopPlaywrightServer(pid);
 }
 
-async function spawnDetachedSupervisorProcess(input: {
+async function spawnDetachedAgentRuntimeManagerProcess(input: {
   gatekeepers: number;
   developers: number;
   polishers: number;
@@ -1624,9 +1628,9 @@ async function spawnDetachedSupervisorProcess(input: {
   return child.pid ?? null;
 }
 
-async function writeSupervisorPid(pid: number): Promise<void> {
-  await fs.mkdir(path.dirname(SUPERVISOR_PID_PATH), { recursive: true });
-  await fs.writeFile(SUPERVISOR_PID_PATH, `${pid}\n`, "utf8");
+async function writeAgentRuntimeManagerPid(pid: number): Promise<void> {
+  await fs.mkdir(path.dirname(AGENT_RUNTIME_MANAGER_PID_PATH), { recursive: true });
+  await fs.writeFile(AGENT_RUNTIME_MANAGER_PID_PATH, `${pid}\n`, "utf8");
 }
 
 async function writePlaywrightServerPid(pid: number): Promise<void> {
@@ -1634,9 +1638,9 @@ async function writePlaywrightServerPid(pid: number): Promise<void> {
   await fs.writeFile(PLAYWRIGHT_SERVER_PID_PATH, `${pid}\n`, "utf8");
 }
 
-async function readSupervisorPid(): Promise<number | null> {
+async function readAgentRuntimeManagerPid(): Promise<number | null> {
   try {
-    const raw = await fs.readFile(SUPERVISOR_PID_PATH, "utf8");
+    const raw = await fs.readFile(AGENT_RUNTIME_MANAGER_PID_PATH, "utf8");
     const value = Number(raw.trim());
     return Number.isInteger(value) && value > 0 ? value : null;
   } catch (error) {
@@ -1662,9 +1666,9 @@ async function readPlaywrightServerPid(): Promise<number | null> {
   }
 }
 
-async function removeSupervisorPidFile(): Promise<void> {
+async function removeAgentRuntimeManagerPidFile(): Promise<void> {
   try {
-    await fs.unlink(SUPERVISOR_PID_PATH);
+    await fs.unlink(AGENT_RUNTIME_MANAGER_PID_PATH);
   } catch (error) {
     const err = error as NodeJS.ErrnoException;
     if (err.code !== "ENOENT") {
