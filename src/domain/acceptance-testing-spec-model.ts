@@ -1,3 +1,5 @@
+import type { BacklogNote } from "./backlog-items-model.js";
+
 export type AcceptanceTestCaseStatus = "draft" | "ready" | "in-progress" | "archived";
 
 export type AcceptanceTestExecutionStatus = "not-run" | "passed" | "failed";
@@ -5,7 +7,7 @@ export type AcceptanceTestExecutionStatus = "not-run" | "passed" | "failed";
 export interface AcceptanceTestCase {
   id: string;
   title: string;
-  notes?: string[];
+  notes?: BacklogNote[];
   status: AcceptanceTestCaseStatus;
   lastExecutionStatus: AcceptanceTestExecutionStatus;
   lastExecutionNote?: string;

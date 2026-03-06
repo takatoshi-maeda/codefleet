@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { JsonRepository } from "../../infra/fs/json-repository.js";
 import { CodefleetError } from "../../shared/errors.js";
+import { createUlid } from "../../shared/ulid.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import type {
   AcceptanceTestCase,
@@ -10,6 +11,7 @@ import type {
   AcceptanceTestingSpec,
 } from "../acceptance-testing-spec-model.js";
 import type { AcceptanceTestingResult } from "../acceptance-testing-result-model.js";
+import type { BacklogNote } from "../backlog-items-model.js";
 import { ensureValidStatusTransition } from "./status-transition.js";
 
 const ACCEPTANCE_DATA_DIR = ".codefleet/data/acceptance-testing";
@@ -71,7 +73,7 @@ export class AcceptanceTestService {
     const testCase: AcceptanceTestCase = {
       id: this.nextTestId(spec.tests),
       title: input.title,
-      notes: unique(input.notes ?? []),
+      notes: buildNotes([], input.notes, now),
       status: input.status ?? "draft",
       lastExecutionStatus: "not-run",
       epicIds: unique(input.epicIds),
@@ -103,9 +105,8 @@ export class AcceptanceTestService {
     }
 
     if (input.addNotes || input.removeNotes) {
-      // Notes are managed as a set-like list by exact string match for deterministic updates.
-      const removeSet = new Set(input.removeNotes ?? []);
-      found.notes = unique([...(found.notes ?? []), ...(input.addNotes ?? [])].filter((note) => !removeSet.has(note)));
+      // Notes are deduplicated by content so repeated CLI operations stay deterministic.
+      found.notes = updateNotes(found.notes ?? [], input.addNotes, input.removeNotes);
     }
 
     if (input.epicIds) {
@@ -247,7 +248,12 @@ export class AcceptanceTestService {
 
   private async getOrInitializeSpec(): Promise<AcceptanceTestingSpec> {
     try {
-      return await this.specRepository.get();
+      const loaded = await this.specRepository.get();
+      const normalized = normalizeAcceptanceTestingSpec(loaded);
+      if (normalized !== loaded) {
+        await this.specRepository.save(normalized);
+      }
+      return normalized;
     } catch (error) {
       if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         const now = new Date().toISOString();
@@ -337,4 +343,84 @@ export class AcceptanceTestService {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function normalizeAcceptanceTestingSpec(spec: AcceptanceTestingSpec): AcceptanceTestingSpec {
+  let changed = false;
+  const tests = spec.tests.map((test) => {
+    const normalizedNotes = normalizeNotes(test.notes, test.updatedAt);
+    if (normalizedNotes === test.notes) {
+      return test;
+    }
+    changed = true;
+    return { ...test, notes: normalizedNotes };
+  });
+
+  return changed ? { ...spec, tests } : spec;
+}
+
+function normalizeNotes(
+  notes: ReadonlyArray<BacklogNote | string> | undefined,
+  fallbackCreatedAt: string,
+): BacklogNote[] | undefined {
+  if (!notes) {
+    return undefined;
+  }
+  if (notes.length === 0) {
+    return [];
+  }
+
+  let changed = false;
+  const normalized = notes
+    .map((note, index) => {
+      if (typeof note === "string") {
+        changed = true;
+        return {
+          id: `legacy-note-${index + 1}`,
+          content: note,
+          createdAt: fallbackCreatedAt,
+        } satisfies BacklogNote;
+      }
+      return note;
+    })
+    .filter((note) => note.content.trim().length > 0);
+
+  return changed ? normalized : (notes as BacklogNote[]);
+}
+
+function buildNotes(
+  existing: ReadonlyArray<BacklogNote | string>,
+  addedContents: ReadonlyArray<string> | undefined,
+  createdAt: string,
+): BacklogNote[] {
+  const normalizedExisting = normalizeNotes(existing, createdAt) ?? [];
+  if (!addedContents || addedContents.length === 0) {
+    return normalizedExisting;
+  }
+
+  const known = new Set(normalizedExisting.map((note) => note.content));
+  const added = addedContents
+    .map((content) => content.trim())
+    .filter((content) => content.length > 0 && !known.has(content))
+    .map((content) => {
+      known.add(content);
+      return {
+        id: createUlid(),
+        content,
+        createdAt,
+      } satisfies BacklogNote;
+    });
+
+  return [...normalizedExisting, ...added];
+}
+
+function updateNotes(
+  existing: ReadonlyArray<BacklogNote | string>,
+  addNotes: ReadonlyArray<string> | undefined,
+  removeNotes: ReadonlyArray<string> | undefined,
+): BacklogNote[] {
+  const now = new Date().toISOString();
+  const removeSet = new Set((removeNotes ?? []).map((note) => note.trim()).filter((note) => note.length > 0));
+  const retained = (normalizeNotes(existing, now) ?? []).filter((note) => !removeSet.has(note.content));
+  return buildNotes(retained, addNotes, now);
 }

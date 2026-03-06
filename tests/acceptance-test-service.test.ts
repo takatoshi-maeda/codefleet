@@ -37,7 +37,8 @@ describe("AcceptanceTestService", () => {
     expect(savedResult.status).toBe("passed");
     expect(spec.tests[0].lastExecutionStatus).toBe("passed");
     expect(spec.tests[0].lastExecutionNote).toBe("all happy paths passed");
-    expect(spec.tests[0].notes).toEqual(["smoke test notes"]);
+    expect(spec.tests[0].notes).toHaveLength(1);
+    expect(spec.tests[0].notes[0]).toMatchObject({ content: "smoke test notes" });
   });
 
   it("self-heals cached status from latest result json when explicitly requested", async () => {
@@ -112,7 +113,8 @@ describe("AcceptanceTestService", () => {
       id: test.id,
       addNotes: ["first", "second"],
     });
-    expect(updated.notes).toEqual(["first", "second"]);
+    expect(updated.notes?.map((note) => note.content)).toEqual(["first", "second"]);
+    expect(updated.notes?.every((note) => note.id.length > 0 && note.createdAt.length > 0)).toBe(true);
 
     const updatedAgain = await service.update({
       id: test.id,
@@ -120,7 +122,46 @@ describe("AcceptanceTestService", () => {
       removeNotes: ["first"],
     });
 
-    expect(updatedAgain.notes).toEqual(["second", "third"]);
+    expect(updatedAgain.notes?.map((note) => note.content)).toEqual(["second", "third"]);
+  });
+
+  it("normalizes legacy string notes into note objects on read", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-acceptance-"));
+    const dataDir = path.join(tempDir, ".codefleet/data/acceptance-testing");
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(
+      path.join(dataDir, "spec.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          tests: [
+            {
+              id: "AT-001",
+              title: "legacy",
+              notes: ["legacy note"],
+              status: "ready",
+              lastExecutionStatus: "not-run",
+              epicIds: ["E-001"],
+              itemIds: ["I-001"],
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const service = new AcceptanceTestService(dataDir);
+    const listed = await service.list();
+
+    expect(listed[0]?.notes?.[0]).toMatchObject({
+      id: "legacy-note-1",
+      content: "legacy note",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
   });
 
   it("clears all acceptance-test data files", async () => {
