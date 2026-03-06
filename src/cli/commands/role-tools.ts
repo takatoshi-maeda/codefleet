@@ -986,7 +986,7 @@ function buildOrchestratorManual(executableName: string): string {
     `${executableName} current-context view`,
     `${executableName} epic upsert --id E-012 --title \"Checkout Revamp\" --note \"Scope aligned with latest acceptance plan\"`,
     `${executableName} item view --id I-104`,
-    `${executableName} item upsert --id I-104 --title \"Add E2E coverage\" --note \"Waiting on API contract confirmation\"`,
+    `${executableName} item upsert --id I-104 --epic E-012 --title \"Add E2E coverage\" --note \"Waiting on API contract confirmation\"`,
     `${executableName} question add --title \"Clarify discount edge-case\" --details \"...\"`,
     "```",
   ].join("\n");
@@ -1056,7 +1056,7 @@ function buildGatekeeperManual(executableName: string): string {
     "",
     "## Typical Examples",
     "```bash",
-    `${executableName} test-case view --epic E-012`,
+    `${executableName} test-case view [--epic E-012] [--item I-104]`,
     `${executableName} test-case upsert --title \"Checkout works on mobile\" --status ready [--epic E-012] [--item I-104]`,
     `${executableName} result save --id AT-033 --status passed --summary \"Desktop/mobile ok\" --last-execution-note \"2026-03-04 run\" --artifact tmp/logs/AT-033.png`,
     "```",

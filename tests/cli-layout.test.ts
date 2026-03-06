@@ -78,7 +78,7 @@ describe("CLI command layout", () => {
       'epic upsert --id E-012 --title "Checkout Revamp" --note "Scope aligned with latest acceptance plan"',
     );
     expect(orchestrator).toContain(
-      'item upsert --id I-104 --title "Add E2E coverage" --note "Waiting on API contract confirmation"',
+      'item upsert --id I-104 --epic E-012 --title "Add E2E coverage" --note "Waiting on API contract confirmation"',
     );
 
     const developer = await renderHelp(createDeveloperToolsCli());
@@ -92,6 +92,7 @@ describe("CLI command layout", () => {
     expect(gatekeeper).toContain("codefleet-gatekeeper-tools [options] [command]");
     expect(gatekeeper).toContain("test-case");
     expect(gatekeeper).toContain("result");
+    expect(gatekeeper).toContain('test-case view [--epic E-012] [--item I-104]');
     expect(gatekeeper).toContain(
       'test-case upsert --title "Checkout works on mobile" --status ready [--epic E-012] [--item I-104]',
     );
