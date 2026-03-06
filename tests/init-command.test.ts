@@ -58,6 +58,7 @@ describe("init command", () => {
       docsRepository: "https://github.com/example/docs-spec.git",
       hooks: {
         Orchestrator: { before_start: [], after_complete: [], after_fail: [] },
+        Curator: { before_start: [], after_complete: [], after_fail: [] },
         Developer: { before_start: [], after_complete: [], after_fail: [] },
         Polisher: { before_start: [], after_complete: [], after_fail: [] },
         Gatekeeper: { before_start: [], after_complete: [], after_fail: [] },

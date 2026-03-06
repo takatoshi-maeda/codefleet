@@ -43,6 +43,7 @@ describe("trigger command", () => {
     await expect(command.parseAsync(["--help"], { from: "user" })).rejects.toBeDefined();
 
     expect(output).toContain("docs.update");
+    expect(output).toContain("source-brief.update");
     expect(output).toContain("feedback-note.create");
     expect(output).toContain("acceptance-test.update");
     expect(output).toContain("acceptance-test.required");
@@ -52,6 +53,7 @@ describe("trigger command", () => {
     expect(output).toContain("backlog.epic.review.ready");
     expect(output).toContain("debug.playwright-test");
     expect(output).toContain("--paths <path> (repeatable/comma-separated)");
+    expect(output).toContain("--brief-path <path>");
     expect(output).toContain("--path <path>");
     expect(output).not.toContain("docs.update [options]");
   });
@@ -108,6 +110,33 @@ describe("trigger command", () => {
 
     expect(router.events).toEqual([{ type: "acceptance-test.update" }]);
     expect(queue.events).toEqual([{ type: "acceptance-test.update" }]);
+    expect(logSpy).toHaveBeenCalled();
+  });
+
+  it("builds source-brief.update event with brief path and source paths", async () => {
+    const router = new RecordingRouter();
+    const queue = new RecordingQueue();
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createTriggerCommand({ router, queue }).parseAsync(
+      [
+        "source-brief.update",
+        "--brief-path",
+        ".codefleet/data/source-brief/latest.md",
+        "--source-path",
+        "docs/spec,docs/requirements.md",
+      ],
+      { from: "user" },
+    );
+
+    expect(router.events).toEqual([
+      {
+        type: "source-brief.update",
+        briefPath: ".codefleet/data/source-brief/latest.md",
+        sourcePaths: ["docs/spec", "docs/requirements.md"],
+      },
+    ]);
+    expect(queue.events).toEqual(router.events);
     expect(logSpy).toHaveBeenCalled();
   });
 

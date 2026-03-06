@@ -540,7 +540,7 @@ async function countJsonFiles(dirPath: string): Promise<number> {
 }
 
 function resolveRoles(roles: AgentRole[] | undefined): AgentRole[] {
-  const defaults: AgentRole[] = ["Orchestrator", "Gatekeeper", "Developer", "Polisher", "Reviewer"];
+  const defaults: AgentRole[] = ["Orchestrator", "Curator", "Gatekeeper", "Developer", "Polisher", "Reviewer"];
   if (!roles || roles.length === 0) {
     return defaults;
   }

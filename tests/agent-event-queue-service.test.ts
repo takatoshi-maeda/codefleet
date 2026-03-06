@@ -25,8 +25,8 @@ describe("AgentEventQueueService", () => {
           lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
         },
         {
-          id: "developer-1",
-          role: "Developer",
+          id: "curator-1",
+          role: "Curator",
           status: "running",
           pid: 222,
           cwd: tempDir,
@@ -50,7 +50,7 @@ describe("AgentEventQueueService", () => {
     const service = new AgentEventQueueService(runtimeDir);
     const result = await service.enqueueToRunningAgents({ type: "docs.update", paths: ["docs/spec.md"] });
 
-    expect(result.enqueuedAgentIds).toEqual(["gatekeeper-1"]);
+    expect(result.enqueuedAgentIds).toEqual(["curator-1"]);
     expect(result.files).toHaveLength(1);
     expect(path.basename(result.files[0] ?? "")).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}\.json$/u);
 
@@ -66,12 +66,55 @@ describe("AgentEventQueueService", () => {
         },
     );
 
-    expect(messages.map((message) => message.agentId).sort()).toEqual(["gatekeeper-1"]);
-    expect(messages.every((message) => message.agentRole === "Gatekeeper")).toBe(true);
+    expect(messages.map((message) => message.agentId).sort()).toEqual(["curator-1"]);
+    expect(messages.every((message) => message.agentRole === "Curator")).toBe(true);
     expect(messages.every((message) => message.event.type === "docs.update")).toBe(true);
     expect(messages.every((message) => message.event.paths[0] === "docs/spec.md")).toBe(true);
     expect(messages.every((message) => message.source.command === "codefleet trigger docs.update")).toBe(true);
     expect(messages.every((message) => typeof message.id === "string" && message.id.length === 26)).toBe(true);
+  });
+
+  it("enqueues source-brief.update only for a single running gatekeeper", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
+    const runtimeDir = path.join(tempDir, ".codefleet", "runtime");
+    await fs.mkdir(runtimeDir, { recursive: true });
+
+    const runtimes: AgentRuntimeCollection = {
+      version: 1,
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      agents: [
+        {
+          id: "gatekeeper-1",
+          role: "Gatekeeper",
+          status: "running",
+          pid: 111,
+          cwd: tempDir,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+        },
+        {
+          id: "gatekeeper-2",
+          role: "Gatekeeper",
+          status: "running",
+          pid: 222,
+          cwd: tempDir,
+          startedAt: "2026-01-01T00:00:00.000Z",
+          lastHeartbeatAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    };
+
+    await fs.writeFile(path.join(runtimeDir, "agents.json"), `${JSON.stringify(runtimes, null, 2)}\n`, "utf8");
+
+    const service = new AgentEventQueueService(runtimeDir);
+    const result = await service.enqueueToRunningAgents({
+      type: "source-brief.update",
+      briefPath: ".codefleet/data/source-brief/latest.md",
+      sourcePaths: ["docs/spec.md"],
+    });
+
+    expect(result.enqueuedAgentIds).toEqual(["gatekeeper-1"]);
+    expect(result.files).toHaveLength(1);
   });
 
   it("enqueues acceptance-test.update messages for running orchestrator", async () => {

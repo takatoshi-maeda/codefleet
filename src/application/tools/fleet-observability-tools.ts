@@ -11,7 +11,7 @@ import { normalizeToolArgs } from "./tool-args.js";
 
 // Keep parsing/defaulting here so protocol adapters only translate transport
 // concerns (MCP responses/notifications) and do not own use-case behavior.
-const AgentRoleSchema = z.enum(["Orchestrator", "Developer", "Polisher", "Gatekeeper", "Reviewer"]);
+const AgentRoleSchema = z.enum(["Orchestrator", "Curator", "Developer", "Polisher", "Gatekeeper", "Reviewer"]);
 
 export const FleetActivityListInputSchema = z.object({
   roles: z.array(AgentRoleSchema).optional(),

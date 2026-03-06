@@ -17,6 +17,7 @@ import type {
   BacklogWorkKind,
   VisibilityType,
 } from "../../domain/backlog-items-model.js";
+import { SourceBriefService } from "../../domain/source-brief/source-brief-service.js";
 
 interface RoleToolsCommandOptions {
   commandName?: string;
@@ -228,6 +229,82 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
           title: "Question Added",
           summary: [`${added.id}: ${added.title}`],
           result: added,
+          verbose: global.verbose,
+        }),
+      );
+    });
+
+  return cmd;
+}
+
+export function createCuratorToolsCommand(options: RoleToolsCommandOptions = {}): Command {
+  const service = new SourceBriefService();
+  const commandName = options.commandName ?? "curator-tools";
+  const executableName = options.executableName ?? `codefleet-${commandName}`;
+
+  const cmd = new Command(commandName);
+  cmd.description("Role-specific CLI for source-document normalization and source-brief persistence.");
+  addGlobalOptions(cmd);
+  cmd.addHelpText("after", `\n${buildCuratorManual(executableName)}\n`);
+
+  const sourceBrief = cmd.command("source-brief").description("Manage the normalized source brief");
+  sourceBrief
+    .command("view")
+    .description("Show the latest source brief and metadata")
+    .action(async function handleSourceBriefView(this: Command) {
+      const global = resolveGlobalOptions(this);
+      const current = await service.readLatest();
+      console.log(
+        renderJsonOutput(
+          {
+            kind: "source-brief",
+            title: current ? "Source Brief" : "Source Brief Missing",
+            data: {
+              exists: current !== null,
+              sourceBrief: current,
+            },
+          },
+          global,
+        ),
+      );
+    });
+
+  sourceBrief
+    .command("save")
+    .description("Persist the latest source brief")
+    .option("--file <path>", "Read source brief markdown from file")
+    .option("--text <text>", "Inline source brief markdown")
+    .option("--source-path <path>", "Source document path", collectRepeatable, [])
+    .action(async function handleSourceBriefSave(
+      this: Command,
+      options: {
+        file?: string;
+        text?: string;
+        sourcePath: string[];
+      },
+    ) {
+      const global = resolveGlobalOptions(this);
+      const hasFile = typeof options.file === "string";
+      const hasText = typeof options.text === "string";
+      if ((hasFile && hasText) || (!hasFile && !hasText)) {
+        throw new Error("source-brief save requires exactly one input: --file <path> or --text <text>");
+      }
+      if (options.sourcePath.length === 0) {
+        throw new Error("source-brief save requires at least one --source-path <path>");
+      }
+
+      const markdown = hasFile ? await fs.readFile(options.file as string, "utf8") : (options.text as string);
+      const saved = await service.writeLatest({
+        markdown,
+        sourcePaths: options.sourcePath,
+        actorId: global.actorId,
+      });
+
+      console.log(
+        renderMutationMarkdown({
+          title: "Source Brief Saved",
+          summary: [`Saved latest source brief from ${saved.sourcePaths.length} source path(s).`],
+          result: saved,
           verbose: global.verbose,
         }),
       );
@@ -858,6 +935,25 @@ function buildOrchestratorManual(executableName: string): string {
     `${executableName} item view --id I-104`,
     `${executableName} item upsert --epic E-012 --title \"Add E2E coverage\" --kind technical`,
     `${executableName} question add --title \"Clarify discount edge-case\" --details \"...\"`,
+    "```",
+  ].join("\n");
+}
+
+function buildCuratorManual(executableName: string): string {
+  return [
+    "# Curator Tools Manual",
+    "",
+    "## Purpose",
+    "- Normalize source documents into the canonical fleet Source Brief before downstream planning and acceptance work starts.",
+    "",
+    "## Subcommands",
+    "- `source-brief view`",
+    "- `source-brief save --file <path>|--text <text> --source-path <path> ...`",
+    "",
+    "## Typical Examples",
+    "```bash",
+    `${executableName} source-brief view`,
+    `${executableName} source-brief save --file tmp/source-brief.md --source-path docs/spec --source-path docs/requirements.md`,
     "```",
   ].join("\n");
 }

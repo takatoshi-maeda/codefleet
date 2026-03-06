@@ -66,6 +66,7 @@ export class AgentEventQueueService {
     const serializedRoleByEventType: Partial<
       Record<SystemEvent["type"], "Developer" | "Polisher" | "Reviewer" | "Gatekeeper">
     > = {
+      "source-brief.update": "Gatekeeper",
       "backlog.epic.ready": "Developer",
       "backlog.epic.polish.ready": "Polisher",
       "backlog.epic.review.ready": "Reviewer",

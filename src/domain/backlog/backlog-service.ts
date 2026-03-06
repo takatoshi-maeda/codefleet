@@ -28,7 +28,7 @@ const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 const CHANGE_LOG_JSONL_PATH = "change-logs.jsonl";
 const READY_EPIC_STATUSES: BacklogEpicStatus[] = ["todo", "changes-requested", "failed"];
 
-type AgentRole = "Orchestrator" | "Developer" | "Polisher" | "Gatekeeper" | "Reviewer";
+type AgentRole = "Orchestrator" | "Curator" | "Developer" | "Polisher" | "Gatekeeper" | "Reviewer";
 type JsonLogValue = string | number | boolean | null | JsonLogValue[] | { [key: string]: JsonLogValue };
 type BacklogChangeTargetType = "epic" | "item" | "question";
 

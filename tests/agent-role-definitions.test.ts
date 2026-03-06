@@ -8,6 +8,7 @@ import {
 describe("agent-role-definitions", () => {
   it("keeps event subscriptions by role", () => {
     expect(getAgentRoleDefinition("Orchestrator").role).toBe("Orchestrator");
+    expect(getAgentRoleDefinition("Curator").role).toBe("Curator");
     expect(getAgentRoleDefinition("Developer").role).toBe("Developer");
     expect(getAgentRoleDefinition("Polisher").role).toBe("Polisher");
     expect(getAgentRoleDefinition("Gatekeeper").role).toBe("Gatekeeper");
@@ -28,15 +29,30 @@ describe("agent-role-definitions", () => {
       }),
     ).toBe(true);
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "backlog.update" })).toBe(false);
-    expect(isRoleSubscribedToEvent("Gatekeeper", { type: "docs.update", paths: ["docs/a.md"] })).toBe(true);
+    expect(isRoleSubscribedToEvent("Curator", { type: "docs.update", paths: ["docs/a.md"] })).toBe(true);
+    expect(
+      isRoleSubscribedToEvent("Gatekeeper", {
+        type: "source-brief.update",
+        briefPath: ".codefleet/data/source-brief/latest.md",
+        sourcePaths: ["docs/a.md"],
+      }),
+    ).toBe(true);
   });
 
   it("maps trigger events to role task prompts", () => {
+    const curator = getAgentRoleDefinition("Curator");
+    const curatorMapped = curator.subscribedEvents["docs.update"];
+    expect(curatorMapped?.triggerEvent).toBe("source-brief.update");
+
+    const curatorPrompt = getRoleEventPromptDefinition("Curator", "docs.update");
+    expect(curatorPrompt.promptEventType).toBe("source-brief.update");
+    expect(curatorPrompt.emitEventType).toBe("source-brief.update");
+
     const gatekeeper = getAgentRoleDefinition("Gatekeeper");
-    const mapped = gatekeeper.subscribedEvents["docs.update"];
+    const mapped = gatekeeper.subscribedEvents["source-brief.update"];
     expect(mapped?.triggerEvent).toBe("acceptance-test.update");
 
-    const gatekeeperPrompt = getRoleEventPromptDefinition("Gatekeeper", "docs.update");
+    const gatekeeperPrompt = getRoleEventPromptDefinition("Gatekeeper", "source-brief.update");
     expect(gatekeeperPrompt.promptEventType).toBe("acceptance-test.update");
     expect(gatekeeperPrompt.emitEventType).toBe("acceptance-test.update");
 

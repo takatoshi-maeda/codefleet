@@ -8,6 +8,7 @@
     "codefleet-acceptance-test": "./bin/codefleet-acceptance-test",
     "codefleet-backlog": "./bin/codefleet-backlog",
     "codefleet-orchestrator-tools": "./bin/codefleet-orchestrator-tools",
+    "codefleet-curator-tools": "./bin/codefleet-curator-tools",
     "codefleet-developer-tools": "./bin/codefleet-developer-tools",
     "codefleet-gatekeeper-tools": "./bin/codefleet-gatekeeper-tools",
     "codefleet-polisher-tools": "./bin/codefleet-polisher-tools",

@@ -1,11 +1,13 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { AcceptanceTestService } from "../src/domain/acceptance/acceptance-test-service.js";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
+import { createCuratorToolsCli } from "../src/cli/codefleet-curator-tools.js";
 import { createDeveloperToolsCli } from "../src/cli/codefleet-developer-tools.js";
 import { createGatekeeperToolsCli } from "../src/cli/codefleet-gatekeeper-tools.js";
 import { createOrchestratorToolsCli } from "../src/cli/codefleet-orchestrator-tools.js";
 import { createPolisherToolsCli } from "../src/cli/codefleet-polisher-tools.js";
 import { createReviewerToolsCli } from "../src/cli/codefleet-reviewer-tools.js";
+import { SourceBriefService } from "../src/domain/source-brief/source-brief-service.js";
 
 describe("role tools commands", () => {
   afterEach(() => {
@@ -22,6 +24,41 @@ describe("role tools commands", () => {
 
     expect(writeSpy).toHaveBeenCalledWith("next requirements");
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Requirements Updated"));
+  });
+
+  it("curator source-brief save persists markdown and source paths", async () => {
+    const writeSpy = vi.spyOn(SourceBriefService.prototype, "writeLatest").mockResolvedValue({
+      version: 1,
+      updatedAt: "2026-03-04T00:00:00.000Z",
+      briefPath: ".codefleet/data/source-brief/latest.md",
+      sourcePaths: ["docs/spec", "docs/requirements.md"],
+      actorId: "curator-1",
+      markdown: "# Source Brief\n",
+    });
+
+    await createCuratorToolsCli().parseAsync(
+      [
+        "--actor-id",
+        "curator-1",
+        "source-brief",
+        "save",
+        "--text",
+        "# Source Brief",
+        "--source-path",
+        "docs/spec",
+        "--source-path",
+        "docs/requirements.md",
+      ],
+      {
+        from: "user",
+      },
+    );
+
+    expect(writeSpy).toHaveBeenCalledWith({
+      markdown: "# Source Brief",
+      sourcePaths: ["docs/spec", "docs/requirements.md"],
+      actorId: "curator-1",
+    });
   });
 
   it("orchestrator item view reads and prints item summary", async () => {

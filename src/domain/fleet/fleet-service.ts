@@ -30,6 +30,7 @@ const DEFAULT_DEVELOPER_COUNT = 1;
 const DEFAULT_DESIGNER_COUNT = 1;
 const DEFAULT_REVIEWER_COUNT = 1;
 const FIXED_ORCHESTRATOR_COUNT = 1;
+const FIXED_CURATOR_COUNT = 1;
 
 export interface FleetStatus {
   summary: "running" | "stopped" | "degraded";
@@ -523,7 +524,7 @@ function parseRoleHooksByAgentRole(value: unknown): RoleHooksByAgentRole {
   const candidate = isRecord(value.roles) ? value.roles : value;
   const parsed: RoleHooksByAgentRole = {};
 
-  for (const role of ["Orchestrator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const) {
+  for (const role of ["Orchestrator", "Curator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const) {
     const roleValue = candidate[role];
     if (roleValue === undefined) {
       continue;
@@ -593,6 +594,13 @@ function buildFollowUpEvent(nextEventType: SystemEvent["type"], sourceEvent: Sys
     return {
       type: "docs.update",
       paths: sourceEvent.type === "docs.update" ? [...sourceEvent.paths] : [],
+    };
+  }
+  if (nextEventType === "source-brief.update") {
+    return {
+      type: "source-brief.update",
+      briefPath: ".codefleet/data/source-brief/latest.md",
+      sourcePaths: sourceEvent.type === "docs.update" ? [...sourceEvent.paths] : [],
     };
   }
   if (nextEventType === "acceptance-test.update") {
@@ -667,6 +675,7 @@ function buildTargetAgents(counts: RoleCountInput): TargetAgent[] {
 
   const targets = [
     ...buildAgentsByRole("Orchestrator", "orchestrator", FIXED_ORCHESTRATOR_COUNT),
+    ...buildAgentsByRole("Curator", "curator", FIXED_CURATOR_COUNT),
     ...buildAgentsByRole("Gatekeeper", "gatekeeper", counts.gatekeepers),
     ...buildAgentsByRole("Developer", "developer", counts.developers),
     ...buildAgentsByRole("Polisher", "polisher", counts.polishers),

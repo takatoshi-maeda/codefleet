@@ -8,7 +8,7 @@ const GITIGNORE_PATH = ".gitignore";
 const CONFIG_PATH = ".codefleet/config.json";
 const DOCS_SUBMODULE_PATH = "docs/spec";
 const IGNORE_ENTRIES = ["/.codefleet/data/", "/.codefleet/runtime/", "/.codefleet/logs/", "/.codefleet/archives/"] as const;
-const AGENT_ROLES = ["Orchestrator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const;
+const AGENT_ROLES = ["Orchestrator", "Curator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const;
 const HOOK_PHASES = ["before_start", "after_complete", "after_fail"] as const;
 
 interface InitCommandDeps {

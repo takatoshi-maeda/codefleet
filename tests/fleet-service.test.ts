@@ -272,11 +272,12 @@ describe("FleetService", () => {
 
     const upStatus = await service.up();
     expect(upStatus.summary).toBe("running");
-    expect(upStatus.agents).toHaveLength(5);
+    expect(upStatus.agents).toHaveLength(6);
     expect(upStatus.agents.every((agent) => agent.status === "running")).toBe(true);
     expect(upStatus.sessions.every((session) => session.status === "ready")).toBe(true);
     expect(appServer.started).toEqual([
       expect.objectContaining({ agentId: "orchestrator-1", role: "Orchestrator", detached: false }),
+      expect.objectContaining({ agentId: "curator-1", role: "Curator", detached: false }),
       expect.objectContaining({ agentId: "gatekeeper-1", role: "Gatekeeper", detached: false }),
       expect.objectContaining({ agentId: "developer-1", role: "Developer", detached: false }),
       expect.objectContaining({ agentId: "polisher-1", role: "Polisher", detached: false }),
@@ -286,13 +287,14 @@ describe("FleetService", () => {
 
     const downStatus = await service.down({ all: true });
     expect(downStatus.summary).toBe("stopped");
-    expect(downStatus.agents).toHaveLength(5);
+    expect(downStatus.agents).toHaveLength(6);
     expect(downStatus.agents.every((agent) => agent.status === "stopped")).toBe(true);
-    expect(downStatus.sessions).toHaveLength(5);
+    expect(downStatus.sessions).toHaveLength(6);
     expect(downStatus.sessions.every((session) => session.status === "disconnected")).toBe(true);
-    expect(processManager.stopped.length).toBe(5);
-    expect(processManager.stopped).toEqual([12345, 12345, 12345, 12345, 12345]);
+    expect(processManager.stopped.length).toBe(6);
+    expect(processManager.stopped).toEqual([12345, 12345, 12345, 12345, 12345, 12345]);
     expect(appServer.shutdowns.sort()).toEqual([
+      "curator-1",
       "developer-1",
       "gatekeeper-1",
       "orchestrator-1",
@@ -331,7 +333,7 @@ describe("FleetService", () => {
     expect(logs).toContain("line3");
   });
 
-  it("starts a new thread for gatekeeper docs.update and uses event prompt", async () => {
+  it("starts a new thread for curator docs.update and uses event prompt", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
@@ -349,33 +351,35 @@ describe("FleetService", () => {
     const emittedEvent = await service.dispatchQueuedEvent({
       id: "evt-1",
       createdAt: "2026-01-01T00:00:00.000Z",
-      agentId: "gatekeeper-1",
-      agentRole: "Gatekeeper",
+      agentId: "curator-1",
+      agentRole: "Curator",
       event: { type: "docs.update", paths: ["docs/spec.md"] },
       source: { command: "codefleet trigger docs.update" },
     });
     expect(emittedEvent).toEqual({
-      type: "acceptance-test.update",
+      type: "source-brief.update",
+      briefPath: ".codefleet/data/source-brief/latest.md",
+      sourcePaths: ["docs/spec.md"],
     });
 
     expect(appServer.startedThreads).toEqual([
-      { agentId: "gatekeeper-1", baseInstructions: "All responses must be in 日本語." },
+      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語." },
     ]);
     expect(appServer.startedTurns).toHaveLength(1);
-    expect(appServer.startedTurns[0]?.agentId).toBe("gatekeeper-1");
-    expect(appServer.startedTurns[0]?.threadId).toBe("gatekeeper-1-new-thread");
+    expect(appServer.startedTurns[0]?.agentId).toBe("curator-1");
+    expect(appServer.startedTurns[0]?.threadId).toBe("curator-1-new-thread");
     expect(appServer.startedTurns[0]?.input).toHaveLength(1);
     expect(appServer.startedTurns[0]?.input[0]?.type).toBe("text");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Please take on the role of Gatekeeper for this task.");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Reference documents (from docs.update paths):");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Please take on the role of Curator for this task.");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Updated source documents (from docs.update paths):");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("docs/spec.md");
     expect(appServer.completedTurns).toEqual([
-      { agentId: "gatekeeper-1", threadId: "gatekeeper-1-new-thread", turnId: "gatekeeper-1-event-turn" },
+      { agentId: "curator-1", threadId: "curator-1-new-thread", turnId: "curator-1-event-turn" },
     ]);
 
-    const status = await service.status("Gatekeeper");
-    expect(status.sessions[0]?.threadId).toBe("gatekeeper-1-new-thread");
-    expect(status.sessions[0]?.activeTurnId).toBe("gatekeeper-1-event-turn");
+    const status = await service.status("Curator");
+    expect(status.sessions[0]?.threadId).toBe("curator-1-new-thread");
+    expect(status.sessions[0]?.activeTurnId).toBe("curator-1-event-turn");
   });
 
   it("uses lang from .codefleet/config.json when up input omits lang", async () => {
@@ -412,15 +416,45 @@ describe("FleetService", () => {
     await service.dispatchQueuedEvent({
       id: "evt-lang-config-1",
       createdAt: "2026-01-01T00:00:00.000Z",
-      agentId: "gatekeeper-1",
-      agentRole: "Gatekeeper",
+      agentId: "curator-1",
+      agentRole: "Curator",
       event: { type: "docs.update", paths: ["docs/spec.md"] },
       source: { command: "codefleet trigger docs.update" },
     });
 
     expect(appServer.startedThreads).toEqual([
-      { agentId: "gatekeeper-1", baseInstructions: "All responses must be in 日本語." },
+      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語." },
     ]);
+  });
+
+  it("emits acceptance-test.update after gatekeeper handles source-brief.update", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up();
+    const emittedEvent = await service.dispatchAgentEvent({
+      agentId: "gatekeeper-1",
+      agentRole: "Gatekeeper",
+      event: {
+        type: "source-brief.update",
+        briefPath: ".codefleet/data/source-brief/latest.md",
+        sourcePaths: ["docs/spec.md"],
+      },
+    });
+
+    expect(emittedEvent).toEqual({ type: "acceptance-test.update" });
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Primary source brief:");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain(".codefleet/data/source-brief/latest.md");
   });
 
   it("emits backlog.epic.polish.ready after developer implementation prompt", async () => {

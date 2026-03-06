@@ -1,11 +1,16 @@
 ## Current Task
 
-Reference documents (from docs.update paths):
-{{paths}}
+Primary source brief:
+{{briefPath}}
+
+Source documents represented by the brief:
+{{sourcePaths}}
 
 Objectives:
 - First, run `codefleet-gatekeeper-tools --help` to load role-specific usage guidance.
-- Identify the user/business goals described in the updated documents.
+- Read `.codefleet/data/source-brief/latest.md` first and use it as the primary source of normalized intent.
+- Use the original source documents only when the brief indicates ambiguity or missing detail.
+- Identify the user/business goals described in the source brief.
 - Define the completion requirements and acceptance requirements needed to achieve those goals.
 - Design acceptance tests that validate goal achievement through product behavior and user-observable outcomes by using `codefleet-gatekeeper-tools` (`test-case view` / `test-case upsert`).
 - Treat test planning as requirements definition and write the plan with that level of rigor.

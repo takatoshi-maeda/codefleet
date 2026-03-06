@@ -14,6 +14,7 @@ Objectives:
 
 Tool Usage Guidelines:
 - Do not directly edit internal codefleet files. Use CLI commands only.
+- Read `.codefleet/data/source-brief/latest.md` first and treat it as the primary normalized source input before deeper repo exploration.
 - Before writing requirements, explore the repository and collect evidence from both documentation and codebase.
 - Start by running `codefleet-orchestrator-tools --help` to understand the intended command usage, then choose and execute the necessary commands for exploration, requirements updates, backlog updates, and verification.
 - If important information is missing, continue with best-effort assumptions and speculative Epic/Item creation, and always record unresolved points as questions.

@@ -121,6 +121,7 @@ async function validateQueueMessage(filePath: string): Promise<AgentEventQueueMe
   }
   if (
     message.agentRole !== "Orchestrator" &&
+    message.agentRole !== "Curator" &&
     message.agentRole !== "Developer" &&
     message.agentRole !== "Polisher" &&
     message.agentRole !== "Gatekeeper" &&
@@ -134,6 +135,16 @@ async function validateQueueMessage(filePath: string): Promise<AgentEventQueueMe
   if (message.event.type === "docs.update") {
     if (!Array.isArray(message.event.paths) || !message.event.paths.every((entry: unknown) => typeof entry === "string")) {
       throw new Error("queue message.event.paths must be string[] for docs.update");
+    }
+  } else if (message.event.type === "source-brief.update") {
+    if (typeof message.event.briefPath !== "string" || message.event.briefPath.trim().length === 0) {
+      throw new Error("queue message.event.briefPath must be non-empty string for source-brief.update");
+    }
+    if (
+      !Array.isArray(message.event.sourcePaths) ||
+      !message.event.sourcePaths.every((entry: unknown) => typeof entry === "string")
+    ) {
+      throw new Error("queue message.event.sourcePaths must be string[] for source-brief.update");
     }
   } else if (message.event.type === "feedback-note.create") {
     if (typeof message.event.path !== "string" || message.event.path.trim().length === 0) {

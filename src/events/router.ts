@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 
 export type SystemEvent =
   | { type: "docs.update"; paths: string[] }
+  | { type: "source-brief.update"; briefPath: string; sourcePaths: string[] }
   | { type: "feedback-note.create"; path: string }
   | { type: "acceptance-test.update" }
   | { type: "acceptance-test.required" }
@@ -13,6 +14,7 @@ export type SystemEvent =
 
 export const SYSTEM_EVENT_TYPES: ReadonlyArray<SystemEvent["type"]> = [
   "docs.update",
+  "source-brief.update",
   "feedback-note.create",
   "acceptance-test.update",
   "acceptance-test.required",
@@ -61,6 +63,35 @@ export const SYSTEM_EVENT_COMMAND_DEFINITIONS: Record<SystemEvent["type"], Syste
         throw new Error("docs.update: --paths must include at least one path");
       }
       return { type: "docs.update", paths };
+    },
+  },
+  "source-brief.update": {
+    description: "SystemEvent.type=source-brief.update",
+    options: [
+      {
+        key: "briefPath",
+        flags: "--brief-path <path>",
+        description: "Project-root relative path to the curated source brief markdown file",
+        required: true,
+        summaryToken: "--brief-path <path>",
+      },
+      {
+        key: "sourcePath",
+        flags: "--source-path <path>",
+        description: "Source document path represented by the brief (repeatable/comma-separated)",
+        parser: "csv-repeatable",
+        summaryToken: "--source-path <path> (repeatable/comma-separated)",
+      },
+    ],
+    createEvent(parsedOptions) {
+      const briefPath = typeof parsedOptions.briefPath === "string" ? parsedOptions.briefPath.trim() : "";
+      if (briefPath.length === 0) {
+        throw new Error("source-brief.update: --brief-path must be non-empty");
+      }
+      const sourcePaths = Array.isArray(parsedOptions.sourcePath)
+        ? parsedOptions.sourcePath.filter((value): value is string => typeof value === "string" && value.length > 0)
+        : [];
+      return { type: "source-brief.update", briefPath, sourcePaths };
     },
   },
   "feedback-note.create": {

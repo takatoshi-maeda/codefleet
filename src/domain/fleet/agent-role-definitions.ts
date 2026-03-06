@@ -35,6 +35,15 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
       },
     },
   },
+  Curator: {
+    role: "Curator",
+    subscribedEvents: {
+      "docs.update": {
+        triggerEvent: "source-brief.update",
+        emitEvent: "source-brief.update",
+      },
+    },
+  },
   Developer: {
     role: "Developer",
     subscribedEvents: {
@@ -71,7 +80,7 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
   Gatekeeper: {
     role: "Gatekeeper",
     subscribedEvents: {
-      "docs.update": {
+      "source-brief.update": {
         triggerEvent: "acceptance-test.update",
         emitEvent: "acceptance-test.update",
       },
