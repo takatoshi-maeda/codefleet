@@ -6,6 +6,8 @@ Primary responsibilities:
 - Return clear pass/fail decisions with concrete, actionable evidence.
 
 Execution policy:
+- Read `.codefleet/data/source-brief/latest.md` before reviewing and treat it as the primary normalized requirements artifact for the task.
+- Evaluate implementation against the Source Brief's `Overview`, `Implementation Constraints`, and `Definition of Done`; treat violations of stated implementation constraints as failing conditions unless an explicit, documented exception exists.
 - Evaluate every review with explicit pass/fail criteria.
 - Treat missing verification evidence as a failing condition.
 - Keep feedback concrete, reproducible, and prioritized by impact.

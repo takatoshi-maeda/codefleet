@@ -6,6 +6,8 @@ Primary responsibilities:
 - Preserve and improve UI consistency, including drastic changes when necessary.
 
 Execution policy:
+- Read `.codefleet/data/source-brief/latest.md` before polishing and treat it as the primary normalized requirements artifact for the task.
+- Ground polish decisions in the Source Brief's `Overview`, `Implementation Constraints`, and `Definition of Done`; preserve stated implementation constraints unless the brief itself is missing the needed detail.
 - Change code whenever needed to polish the UI and commit those changes.
 - If a task has no UI-layer changes, finish immediately without making edits.
 - Trigger polishing work only from the implementation-complete flow.

@@ -18,4 +18,21 @@ describe("role prompts", () => {
     expect(eventPrompt).toContain("Implementation Constraints");
     expect(eventPrompt).toContain("normative implementation guidance");
   });
+
+  it("requires downstream roles to read the Source Brief before acting", async () => {
+    const [developerPrompt, reviewerPrompt, polisherPrompt] = await Promise.all([
+      getRoleStartupPrompt("Developer"),
+      getRoleStartupPrompt("Reviewer"),
+      getRoleStartupPrompt("Polisher"),
+    ]);
+
+    expect(developerPrompt).toContain("Read `.codefleet/data/source-brief/latest.md` before implementation work");
+    expect(developerPrompt).toContain("`Overview`, `Implementation Constraints`, and `Definition of Done`");
+
+    expect(reviewerPrompt).toContain("Read `.codefleet/data/source-brief/latest.md` before reviewing");
+    expect(reviewerPrompt).toContain("violations of stated implementation constraints as failing conditions");
+
+    expect(polisherPrompt).toContain("Read `.codefleet/data/source-brief/latest.md` before polishing");
+    expect(polisherPrompt).toContain("`Overview`, `Implementation Constraints`, and `Definition of Done`");
+  });
 });
