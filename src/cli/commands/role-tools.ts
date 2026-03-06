@@ -1,5 +1,7 @@
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import { Command } from "commander";
+import { resolveDocsUpdateSubmodulePaths } from "../../events/watchers/docs-update-submodule-watcher.js";
 import type {
   AcceptanceTestCase,
   AcceptanceTestCaseStatus,
@@ -42,6 +44,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for orchestrator planning and backlog synchronization.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildOrchestratorManual(executableName)}\n`);
 
   const currentContext = cmd.command("current-context").description("Read current planning context");
@@ -224,6 +227,7 @@ export function createCuratorToolsCommand(options: RoleToolsCommandOptions = {})
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for source-document normalization and source-brief persistence.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildCuratorManual(executableName)}\n`);
 
   const sourceBrief = cmd.command("source-brief").description("Manage the normalized source brief");
@@ -300,6 +304,7 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for developer execution tracking.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildDeveloperManual(executableName)}\n`);
 
   const currentContext = cmd.command("current-context").description("Read implementation context");
@@ -444,6 +449,7 @@ export function createGatekeeperToolsCommand(options: RoleToolsCommandOptions = 
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for acceptance planning and result recording.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildGatekeeperManual(executableName)}\n`);
 
   const testCase = cmd.command("test-case").description("Manage acceptance test cases");
@@ -566,6 +572,7 @@ export function createPolisherToolsCommand(options: RoleToolsCommandOptions = {}
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for UI polishing context and notes.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildPolisherManual(executableName)}\n`);
 
   const currentContext = cmd.command("current-context").description("Read polishing context");
@@ -647,6 +654,7 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
   const cmd = new Command(commandName);
   cmd.description("Role-specific CLI for review decisions.");
   addGlobalOptions(cmd);
+  addAgentsMdViewCommand(cmd);
   cmd.addHelpText("after", `\n${buildReviewerManual(executableName)}\n`);
 
   const currentContext = cmd.command("current-context").description("Read review context");
@@ -774,12 +782,37 @@ function addGlobalOptions(cmd: Command): void {
   cmd.option("--verbose", "Show verbose output");
 }
 
+function addAgentsMdViewCommand(cmd: Command): void {
+  const agentsMd = cmd.command("agents-md").description("Read project guidance from AGENTS.md");
+  agentsMd
+    .command("view")
+    .description("Show AGENTS.md from the docsRepository clone root")
+    .action(async function handleAgentsMdView() {
+      const { submoduleDir } = resolveDocsUpdateSubmodulePaths({ repositoryRoot: process.cwd() });
+      const agentsMdPath = path.join(submoduleDir, "AGENTS.md");
+      try {
+        // docsRepository is cloned as the docs submodule, so AGENTS.md is resolved from that clone root.
+        const content = await fs.readFile(agentsMdPath, "utf8");
+        console.log(content);
+      } catch (error: unknown) {
+        if (isNodeErrorWithCode(error, "ENOENT")) {
+          throw new Error(`AGENTS.md not found at ${agentsMdPath}`);
+        }
+        throw error;
+      }
+    });
+}
+
 function resolveGlobalOptions(command: Command): ResolvedGlobalOptions {
   const options = command.optsWithGlobals() as GlobalCliOptions;
   return {
     actorId: options.actorId,
     verbose: Boolean(options.verbose),
   };
+}
+
+function isNodeErrorWithCode(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error && error.code === code;
 }
 
 async function attachAcceptanceTestToBacklog(
@@ -969,6 +1002,7 @@ function buildOrchestratorManual(executableName: string): string {
     "- Maintain epics/items and open questions as a single planning flow.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `current-context view`",
     "- `epic upsert ...`",
     "- `item view --id <I-xxx>`",
@@ -977,6 +1011,7 @@ function buildOrchestratorManual(executableName: string): string {
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} current-context view`,
     `${executableName} epic upsert --id E-012 --title \"Checkout Revamp\" --note \"Scope aligned with latest acceptance plan\"`,
     `${executableName} item view --id I-104`,
@@ -994,11 +1029,13 @@ function buildCuratorManual(executableName: string): string {
     "- Normalize source documents into the canonical fleet Source Brief before downstream planning and acceptance work starts.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `source-brief view`",
     "- `source-brief save --file <path>|--text <text> --source-path <path> ...`",
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} source-brief view`,
     `${executableName} source-brief save --file tmp/source-brief.md --source-path docs/spec --source-path docs/requirements.md`,
     "```",
@@ -1013,6 +1050,7 @@ function buildDeveloperManual(executableName: string): string {
     "- Shorten implementation routines: context read, status update, notes, and question handling.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `current-context view --epic <E-xxx>`",
     "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
@@ -1024,6 +1062,7 @@ function buildDeveloperManual(executableName: string): string {
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} current-context view --epic E-012`,
     `${executableName} epic add-note --id E-012 --note \"Blocked by missing staging credential\"`,
     `${executableName} item view --id I-104`,
@@ -1044,12 +1083,14 @@ function buildGatekeeperManual(executableName: string): string {
     "- Manage acceptance test planning and persist execution evidence.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `test-case view [--epic <E-xxx>] [--item <I-xxx>]`",
     "- `test-case upsert ...`",
     "- `result save --id <AT-xxx> --status passed|failed --summary <text> --last-execution-note <text> ...`",
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} test-case view [--epic E-012] [--item I-104]`,
     `${executableName} test-case upsert --title \"Checkout works on mobile\" --status ready [--epic E-012] [--item I-104]`,
     `${executableName} result save --id AT-033 --status passed --summary \"Desktop/mobile ok\" --last-execution-note \"2026-03-04 run\" --artifact tmp/logs/AT-033.png`,
@@ -1065,6 +1106,7 @@ function buildPolisherManual(executableName: string): string {
     "- Read polishing context and preserve rationale in backlog notes.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `current-context view --epic <E-xxx>`",
     "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
@@ -1072,6 +1114,7 @@ function buildPolisherManual(executableName: string): string {
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} current-context view --epic E-012`,
     `${executableName} epic add-note --id E-012 --note \"Homepage hero still feels visually dense on tablet\"`,
     `${executableName} item view --id I-104`,
@@ -1088,6 +1131,7 @@ function buildReviewerManual(executableName: string): string {
     "- Make PASS/CHANGES_REQUESTED decisions and sync epic status safely.",
     "",
     "## Subcommands",
+    "- `agents-md view`",
     "- `current-context view --epic <E-xxx>`",
     "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
@@ -1097,6 +1141,7 @@ function buildReviewerManual(executableName: string): string {
     "",
     "## Typical Examples",
     "```bash",
+    `${executableName} agents-md view`,
     `${executableName} current-context view --epic E-012`,
     `${executableName} epic add-note --id E-012 --note \"Observed borderline mobile overflow in Safari\"`,
     `${executableName} item view --id I-104`,

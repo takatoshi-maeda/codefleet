@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { promises as fs } from "node:fs";
 import { AcceptanceTestService } from "../src/domain/acceptance/acceptance-test-service.js";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
 import { createCuratorToolsCli } from "../src/cli/codefleet-curator-tools.js";
@@ -47,6 +48,38 @@ describe("role tools commands", () => {
       sourcePaths: ["docs/spec", "docs/requirements.md"],
       actorId: "curator-1",
     });
+  });
+
+  it("all role tool CLIs expose agents-md view and print AGENTS.md contents", async () => {
+    const readFileSpy = vi.spyOn(fs, "readFile").mockResolvedValue("# AGENTS\nuse this\n");
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const commands = [
+      createCuratorToolsCli(),
+      createDeveloperToolsCli(),
+      createGatekeeperToolsCli(),
+      createOrchestratorToolsCli(),
+      createPolisherToolsCli(),
+      createReviewerToolsCli(),
+    ];
+
+    for (const command of commands) {
+      await command.parseAsync(["agents-md", "view"], { from: "user" });
+    }
+
+    expect(readFileSpy).toHaveBeenCalledWith("/workspace/docs/spec/AGENTS.md", "utf8");
+    expect(logSpy).toHaveBeenCalledTimes(commands.length);
+    expect(logSpy).toHaveBeenNthCalledWith(1, "# AGENTS\nuse this\n");
+    expect(logSpy).toHaveBeenNthCalledWith(commands.length, "# AGENTS\nuse this\n");
+  });
+
+  it("agents-md view throws when AGENTS.md is missing", async () => {
+    const missing = Object.assign(new Error("missing"), { code: "ENOENT" });
+    vi.spyOn(fs, "readFile").mockRejectedValue(missing);
+
+    await expect(createOrchestratorToolsCli().parseAsync(["agents-md", "view"], { from: "user" })).rejects.toThrow(
+      "AGENTS.md not found at /workspace/docs/spec/AGENTS.md",
+    );
   });
 
   it("orchestrator item view reads and prints item summary", async () => {
