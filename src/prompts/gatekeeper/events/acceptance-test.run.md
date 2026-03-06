@@ -19,15 +19,16 @@ Required workflow:
    - usability naturalness
    - requirements/spec conformance
 7. Persist results with `codefleet-gatekeeper-tools result save`, and always write a concrete execution summary into `lastExecutionNote` (via `--last-execution-note`).
-8. Append notes to the relevant Acceptance Tests, Epics, and Items when execution uncovers important cautions, referenced documents, defects, risk areas, or follow-up guidance that downstream agents should inherit.
-9. Commit the acceptance-test script changes to git.
-10. Re-run `codefleet-gatekeeper-tools test-case view` to confirm `lastExecutionStatus` is no longer `not-run` for executed tests.
+8. Do not add backlog Epics or Items and do not write notes to them during this run.
+9. Append notes to the relevant Acceptance Tests when execution uncovers important cautions, referenced documents, defects, risk areas, or follow-up guidance that downstream agents should inherit.
+10. Commit the acceptance-test script changes to git.
+11. Re-run `codefleet-gatekeeper-tools test-case view` to confirm `lastExecutionStatus` is no longer `not-run` for executed tests.
 
 Output requirements:
 - Report which acceptance tests were executed.
 - Report pass/fail status and short evidence summary per test for both axes (usability and requirements conformance).
 - Report which document-stated goal(s) each executed test validates.
 - Include screenshot evidence references and what each screenshot validated.
-- Report what important downstream guidance was preserved in Acceptance Test, Epic, and/or Item notes.
+- Report what important downstream guidance was preserved in Acceptance Test notes.
 - Include the commit hash for acceptance-test script changes.
 - Explicitly note any tests that could not be executed and why.

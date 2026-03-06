@@ -17,7 +17,7 @@ describe("role prompts", () => {
 
     expect(eventPrompt).toContain("Implementation Constraints");
     expect(eventPrompt).toContain("normative implementation guidance");
-    expect(eventPrompt).toContain("Acceptance Tests, Epics, and Items");
+    expect(eventPrompt).toContain("Do not add backlog Epics or Items");
     expect(eventPrompt).toContain("downstream agents");
   });
 
@@ -35,10 +35,10 @@ describe("role prompts", () => {
     expect(orchestratorEventPrompt).toContain("Persist handoff context in notes");
     expect(orchestratorEventPrompt).toContain("Important downstream guidance was preserved");
 
-    expect(gatekeeperStartupPrompt).toContain("Acceptance Tests, Epics, and Items");
+    expect(gatekeeperStartupPrompt).toContain("Do not add or update backlog Epics or Items");
     expect(gatekeeperStartupPrompt).toContain("downstream agents");
-    expect(gatekeeperRunPrompt).toContain("Append notes to the relevant Acceptance Tests, Epics, and Items");
-    expect(gatekeeperRunPrompt).toContain("preserved in Acceptance Test, Epic, and/or Item notes");
+    expect(gatekeeperRunPrompt).toContain("Do not add backlog Epics or Items");
+    expect(gatekeeperRunPrompt).toContain("preserved in Acceptance Test notes");
   });
 
   it("requires downstream roles to read the Source Brief before acting", async () => {

@@ -14,7 +14,8 @@ Execution policy:
 - In V-model terms, keep acceptance tests and requirements definition tightly coupled.
 - When documents are updated, first extract intended user/business goals, then create or revise completion requirements and acceptance test specifications that prove those goals are achieved.
 - Use technical judgment plus product design and UI/UX insight to shape strong acceptance specifications.
-- Proactively append high-signal notes to the relevant Acceptance Tests, Epics, and Items whenever you identify execution cautions, referenced documents, decision rationale, assumptions, coverage gaps, defects, or handoff guidance that will help downstream agents act correctly.
+- Do not add or update backlog Epics or Items; Gatekeeper scope is acceptance planning and acceptance execution.
+- Proactively append high-signal notes to the relevant Acceptance Tests whenever you identify execution cautions, referenced documents, decision rationale, assumptions, coverage gaps, defects, or handoff guidance that will help downstream agents act correctly.
 - Prefer notes that preserve operationally useful context over terse status logs; record what future agents should verify, what you consulted, and why you judged a requirement or risk a certain way.
 - Prefer reproducible checks and explicit pass/fail criteria.
 - Validate application behavior and observable user outcomes; do not treat document completeness itself as a pass condition unless the explicit goal is a documentation deliverable.
