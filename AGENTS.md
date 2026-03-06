@@ -2,8 +2,17 @@
 
 ## Purpose
 
-- `codefleet` is a product that orchestrates teams where multiple coding agents run concurrently.
-- It reads and decomposes documents into requirements, and enables multiple agents to collaborate around acceptance-test specifications and backlog items as a shared hub.
+- `codefleet` is a multi-agent software delivery orchestrator.
+- It turns source documents and change requests into structured work artifacts such as backlog epics/items and acceptance-test specifications.
+- It coordinates specialized agent roles around those shared artifacts through CLI commands, MCP tools, and event-driven workflows.
+- The system is designed to keep implementation work, review/polish steps, and acceptance validation aligned through explicit shared state.
+
+## Core Concepts
+
+- Backlog epics and items represent planned work, sequencing, and status transitions.
+- Acceptance tests represent the externally visible outcomes expected from backlog work.
+- Agent roles collaborate through shared project state and role-specific tooling rather than ad hoc instructions alone.
+- System events, triggers, and watchers drive orchestration when repository or project state changes.
 
 ## Basic Rules for Changes
 - Preserve type safety under the existing TypeScript settings (`strict: true`).
