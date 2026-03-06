@@ -11,7 +11,7 @@ const EPIC_TRANSITIONS: Record<BacklogEpicStatus, BacklogEpicStatus[]> = {
 };
 
 const ITEM_TRANSITIONS: Record<BacklogItemStatus, BacklogItemStatus[]> = {
-  todo: ["wait-implementation", "blocked"],
+  todo: ["wait-implementation", "in-progress", "blocked"],
   "wait-implementation": ["in-progress", "blocked"],
   "in-progress": ["done", "blocked"],
   done: [],
