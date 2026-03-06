@@ -6,9 +6,11 @@ import type { AcceptanceTestingSpec } from "../acceptance-testing-spec-model.js"
 import type {
   BacklogEpic,
   BacklogEpicStatus,
+  BacklogEpicStatusChangedAt,
   BacklogItem,
   BacklogItems,
   BacklogItemStatus,
+  BacklogItemStatusChangedAt,
   BacklogNote,
   BacklogQuestion,
   BacklogQuestionStatus,
@@ -231,6 +233,7 @@ export class BacklogService {
     ensureValidEpicStatusTransition(candidate.status, "in-progress");
     const now = new Date().toISOString();
     candidate.status = "in-progress";
+    candidate.statusChangedAt = recordEpicStatusChange(candidate.statusChangedAt, candidate.status, now);
     candidate.updatedAt = now;
     items.updatedAt = now;
 
@@ -263,6 +266,7 @@ export class BacklogService {
         continue;
       }
       epic.status = "todo";
+      epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, epic.status, now);
       epic.updatedAt = now;
     }
     for (const item of items.items) {
@@ -270,6 +274,7 @@ export class BacklogService {
         continue;
       }
       item.status = "todo";
+      item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, item.status, now);
       item.updatedAt = now;
     }
     items.updatedAt = now;
@@ -308,6 +313,7 @@ export class BacklogService {
         continue;
       }
       epic.status = "todo";
+      epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, epic.status, now);
       epic.updatedAt = now;
     }
     for (const item of items.items) {
@@ -315,6 +321,7 @@ export class BacklogService {
         continue;
       }
       item.status = "todo";
+      item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, item.status, now);
       item.updatedAt = now;
     }
     items.updatedAt = now;
@@ -346,6 +353,7 @@ export class BacklogService {
       kind: input.kind ?? "product",
       notes: buildNotes([], input.notes, input.actorId, now),
       status: input.status ?? "todo",
+      statusChangedAt: { [input.status ?? "todo"]: now },
       visibility: input.visibility ?? defaultVisibility(),
       acceptanceTestIds: unique(input.acceptanceTestIds),
       updatedAt: now,
@@ -371,11 +379,16 @@ export class BacklogService {
       epic.acceptanceTestIds = unique(input.acceptanceTestIds);
     }
 
+    const now = new Date().toISOString();
+
     if (input.status) {
       if (!input.force) {
         ensureValidEpicStatusTransition(epic.status, input.status, input.reopen ?? false);
       }
-      epic.status = input.status;
+      if (epic.status !== input.status) {
+        epic.status = input.status;
+        epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, input.status, now);
+      }
     }
 
     if (input.title !== undefined) {
@@ -393,7 +406,6 @@ export class BacklogService {
       epic.visibility = input.visibility;
     }
 
-    const now = new Date().toISOString();
     epic.updatedAt = now;
     items.updatedAt = now;
 
@@ -447,6 +459,7 @@ export class BacklogService {
       kind: input.kind ?? "product",
       notes: buildNotes([], input.notes, input.actorId, now),
       status: input.status ?? "todo",
+      statusChangedAt: { [input.status ?? "todo"]: now },
       acceptanceTestIds: unique(input.acceptanceTestIds),
       updatedAt: now,
     };
@@ -471,9 +484,14 @@ export class BacklogService {
       item.acceptanceTestIds = unique(input.acceptanceTestIds);
     }
 
+    const now = new Date().toISOString();
+
     if (input.status) {
       ensureValidItemStatusTransition(item.status, input.status, input.reopen ?? false);
-      item.status = input.status;
+      if (item.status !== input.status) {
+        item.status = input.status;
+        item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, input.status, now);
+      }
     }
 
     if (input.title !== undefined) {
@@ -487,7 +505,6 @@ export class BacklogService {
       item.notes = updateNotes(item.notes ?? [], input.addNotes, input.removeNotes, input.actorId);
     }
 
-    const now = new Date().toISOString();
     item.updatedAt = now;
     items.updatedAt = now;
 
@@ -846,14 +863,60 @@ function normalizeBacklogItems(items: BacklogItems): NormalizedBacklogItems {
       ...epic,
       kind: epic.kind ?? "product",
       notes: normalizeNotes(epic.notes, epic.updatedAt),
+      statusChangedAt: normalizeEpicStatusChangedAt(epic.statusChangedAt, epic.status, epic.updatedAt),
     })),
     items: items.items.map((item) => ({
       ...item,
       kind: item.kind ?? "product",
       notes: normalizeNotes(item.notes, item.updatedAt),
+      statusChangedAt: normalizeItemStatusChangedAt(item.statusChangedAt, item.status, item.updatedAt),
     })),
     questions: items.questions ? [...items.questions] : [],
   };
+}
+
+function normalizeEpicStatusChangedAt(
+  statusChangedAt: BacklogEpicStatusChangedAt | undefined,
+  currentStatus: BacklogEpicStatus,
+  fallbackChangedAt: string,
+): BacklogEpicStatusChangedAt {
+  // Legacy snapshots only know the current status; seed that entry without inventing
+  // timestamps for statuses the entity may never have visited.
+  return recordEpicStatusChange(statusChangedAt, currentStatus, fallbackChangedAt, false);
+}
+
+function normalizeItemStatusChangedAt(
+  statusChangedAt: BacklogItemStatusChangedAt | undefined,
+  currentStatus: BacklogItemStatus,
+  fallbackChangedAt: string,
+): BacklogItemStatusChangedAt {
+  return recordItemStatusChange(statusChangedAt, currentStatus, fallbackChangedAt, false);
+}
+
+function recordEpicStatusChange(
+  statusChangedAt: BacklogEpicStatusChangedAt | undefined,
+  status: BacklogEpicStatus,
+  changedAt: string,
+  overwrite = true,
+): BacklogEpicStatusChangedAt {
+  // We keep the latest timestamp per status. Re-entering a prior state should replace
+  // that state's timestamp, while normalization preserves already-recorded values.
+  if (!overwrite && statusChangedAt?.[status]) {
+    return { ...statusChangedAt };
+  }
+  return { ...(statusChangedAt ?? {}), [status]: changedAt };
+}
+
+function recordItemStatusChange(
+  statusChangedAt: BacklogItemStatusChangedAt | undefined,
+  status: BacklogItemStatus,
+  changedAt: string,
+  overwrite = true,
+): BacklogItemStatusChangedAt {
+  if (!overwrite && statusChangedAt?.[status]) {
+    return { ...statusChangedAt };
+  }
+  return { ...(statusChangedAt ?? {}), [status]: changedAt };
 }
 
 function isVisible(epic: BacklogEpic, epicsById: Map<string, BacklogEpic>): boolean {

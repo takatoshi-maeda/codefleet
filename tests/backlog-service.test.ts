@@ -214,6 +214,69 @@ describe("BacklogService", () => {
     expect(updatedItemAgain.notes?.map((note) => note.content)).toEqual(["item note 2", "item note 3"]);
   });
 
+  it("tracks per-status changedAt timestamps for new and updated epics/items", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
+    const item = await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [], status: "wait-implementation" });
+
+    expect(epic.statusChangedAt).toEqual({ todo: epic.updatedAt });
+    expect(item.statusChangedAt).toEqual({ "wait-implementation": item.updatedAt });
+
+    const startedEpic = await service.updateEpic({ id: epic.id, status: "in-progress" });
+    expect(startedEpic.statusChangedAt.todo).toBe(epic.updatedAt);
+    expect(startedEpic.statusChangedAt["in-progress"]).toBe(startedEpic.updatedAt);
+
+    const doneItem = await service.updateItem({ id: item.id, status: "in-progress" });
+    const blockedItem = await service.updateItem({ id: item.id, status: "blocked" });
+    expect(doneItem.statusChangedAt["wait-implementation"]).toBe(item.updatedAt);
+    expect(doneItem.statusChangedAt["in-progress"]).toBe(doneItem.updatedAt);
+    expect(blockedItem.statusChangedAt.blocked).toBe(blockedItem.updatedAt);
+    expect(blockedItem.statusChangedAt["wait-implementation"]).toBe(item.updatedAt);
+  });
+
+  it("does not change per-status changedAt timestamps for non-status updates", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
+    const item = await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [] });
+
+    const epicStatusChangedAt = { ...epic.statusChangedAt };
+    const itemStatusChangedAt = { ...item.statusChangedAt };
+
+    const updatedEpic = await service.updateEpic({ id: epic.id, addNotes: ["note"] });
+    const updatedItem = await service.updateItem({ id: item.id, title: "renamed item" });
+
+    expect(updatedEpic.statusChangedAt).toEqual(epicStatusChangedAt);
+    expect(updatedItem.statusChangedAt).toEqual(itemStatusChangedAt);
+  });
+
   it("supports backlog question add/list/update/answer/delete", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
@@ -341,6 +404,63 @@ describe("BacklogService", () => {
       content: "legacy item note",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
+  });
+
+  it("normalizes missing per-status changedAt from current status and updatedAt", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const backlogItemsPath = path.join(backlogDir, "items.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+    await fs.mkdir(path.dirname(backlogItemsPath), { recursive: true });
+    await fs.writeFile(
+      backlogItemsPath,
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          epics: [
+            {
+              id: "E-001",
+              title: "legacy epic",
+              status: "in-review",
+              visibility: { type: "always-visible", dependsOnEpicIds: [] },
+              acceptanceTestIds: [],
+              updatedAt: "2026-01-02T00:00:00.000Z",
+            },
+          ],
+          items: [
+            {
+              id: "I-001",
+              epicId: "E-001",
+              title: "legacy item",
+              status: "blocked",
+              acceptanceTestIds: [],
+              updatedAt: "2026-01-03T00:00:00.000Z",
+            },
+          ],
+          questions: [],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const listed = await service.list();
+
+    expect(listed.epics[0]?.statusChangedAt).toEqual({ "in-review": "2026-01-02T00:00:00.000Z" });
+    expect(listed.items[0]?.statusChangedAt).toEqual({ blocked: "2026-01-03T00:00:00.000Z" });
   });
 
   it("reads item by id and returns ERR_NOT_FOUND for unknown ids", async () => {

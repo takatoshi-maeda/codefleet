@@ -6,6 +6,8 @@ export type BacklogEpicStatus =
   | "done"
   | "failed";
 export type BacklogItemStatus = "todo" | "wait-implementation" | "in-progress" | "done" | "blocked";
+export type BacklogEpicStatusChangedAt = Partial<Record<BacklogEpicStatus, string>>;
+export type BacklogItemStatusChangedAt = Partial<Record<BacklogItemStatus, string>>;
 export type BacklogQuestionStatus = "open" | "answered";
 export type BacklogWorkKind = "product" | "technical";
 
@@ -29,6 +31,7 @@ export interface BacklogEpic {
   kind?: BacklogWorkKind;
   notes?: BacklogNote[];
   status: BacklogEpicStatus;
+  statusChangedAt: BacklogEpicStatusChangedAt;
   visibility: VisibilityRule;
   acceptanceTestIds: string[];
   updatedAt: string;
@@ -41,6 +44,7 @@ export interface BacklogItem {
   kind?: BacklogWorkKind;
   notes?: BacklogNote[];
   status: BacklogItemStatus;
+  statusChangedAt: BacklogItemStatusChangedAt;
   acceptanceTestIds: string[];
   updatedAt: string;
 }

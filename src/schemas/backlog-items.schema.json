@@ -40,6 +40,18 @@
             "type": "string",
             "enum": ["todo", "in-progress", "in-review", "changes-requested", "done", "failed"]
           },
+          "statusChangedAt": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "todo": { "type": "string", "format": "date-time" },
+              "in-progress": { "type": "string", "format": "date-time" },
+              "in-review": { "type": "string", "format": "date-time" },
+              "changes-requested": { "type": "string", "format": "date-time" },
+              "done": { "type": "string", "format": "date-time" },
+              "failed": { "type": "string", "format": "date-time" }
+            }
+          },
           "visibility": {
             "type": "object",
             "additionalProperties": false,
@@ -95,6 +107,17 @@
           "status": {
             "type": "string",
             "enum": ["todo", "wait-implementation", "in-progress", "done", "blocked"]
+          },
+          "statusChangedAt": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "todo": { "type": "string", "format": "date-time" },
+              "wait-implementation": { "type": "string", "format": "date-time" },
+              "in-progress": { "type": "string", "format": "date-time" },
+              "done": { "type": "string", "format": "date-time" },
+              "blocked": { "type": "string", "format": "date-time" }
+            }
           },
           "acceptanceTestIds": {
             "type": "array",
