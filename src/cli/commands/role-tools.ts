@@ -64,6 +64,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
     .description("Create or update an epic")
     .option("--id <id>", "Epic id (update mode)")
     .requiredOption("--title <title>", "Epic title")
+    .option("--note <note>", "Single note to append")
     .option("--kind <kind>", "Epic kind (product|technical)")
     .option("--status <status>", "Epic status")
     .option("--visibility-type <type>", "always-visible or blocked-until-epic-complete")
@@ -74,6 +75,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
       options: {
         id?: string;
         title: string;
+        note?: string;
         kind?: BacklogWorkKind;
         status?: BacklogEpicStatus;
         visibilityType?: VisibilityType;
@@ -94,6 +96,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         ? await service.updateEpic({
             id: options.id,
             title: options.title,
+            addNotes: options.note ? [options.note] : undefined,
             kind: options.kind,
             status: options.status,
             visibility,
@@ -102,6 +105,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
           })
         : await service.addEpic({
             title: options.title,
+            notes: options.note ? [options.note] : [],
             kind: options.kind,
             status: options.status,
             visibility,
@@ -135,6 +139,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
     .option("--id <id>", "Item id (update mode)")
     .option("--epic <epicId>", "Epic id")
     .requiredOption("--title <title>", "Item title")
+    .option("--note <note>", "Single note to append")
     .option("--kind <kind>", "Item kind (product|technical)")
     .option("--status <status>", "Item status")
     .option("--acceptance-test <testId>", "Linked acceptance test id", collectRepeatable, [])
@@ -144,6 +149,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         id?: string;
         epic?: string;
         title: string;
+        note?: string;
         kind?: BacklogWorkKind;
         status?: BacklogItemStatus;
         acceptanceTest: string[];
@@ -158,6 +164,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         ? await service.updateItem({
             id: options.id,
             title: options.title,
+            addNotes: options.note ? [options.note] : undefined,
             kind: options.kind,
             status: options.status,
             acceptanceTestIds: options.acceptanceTest.length > 0 ? options.acceptanceTest : undefined,
@@ -166,6 +173,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         : await service.addItem({
             epicId: options.epic as string,
             title: options.title,
+            notes: options.note ? [options.note] : [],
             kind: options.kind,
             status: options.status,
             acceptanceTestIds: options.acceptanceTest,
@@ -307,6 +315,24 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
       console.log(renderDeveloperContextMarkdown(epic, listed.items, global));
     });
 
+  const epic = cmd.command("epic").description("Manage implementation epics");
+  epic
+    .command("add-note")
+    .requiredOption("--id <id>", "Epic id")
+    .requiredOption("--note <text>", "Note text")
+    .action(async function handleEpicAddNote(this: Command, options: { id: string; note: string }) {
+      const global = resolveGlobalOptions(this);
+      const updated = await service.updateEpic({ id: options.id, addNotes: [options.note], actorId: global.actorId });
+      console.log(
+        renderMutationMarkdown({
+          title: "Epic Note Added",
+          summary: [`Added note to ${updated.id}.`],
+          result: updated,
+          verbose: global.verbose,
+        }),
+      );
+    });
+
   const item = cmd.command("item").description("Manage implementation items");
   item
     .command("view")
@@ -340,10 +366,10 @@ export function createDeveloperToolsCommand(options: RoleToolsCommandOptions = {
     });
 
   item
-    .command("note")
+    .command("add-note")
     .requiredOption("--id <id>", "Item id")
     .requiredOption("--note <text>", "Note text")
-    .action(async function handleItemNote(this: Command, options: { id: string; note: string }) {
+    .action(async function handleItemAddNote(this: Command, options: { id: string; note: string }) {
       const global = resolveGlobalOptions(this);
       const updated = await service.updateItem({ id: options.id, addNotes: [options.note], actorId: global.actorId });
       console.log(
@@ -555,6 +581,29 @@ export function createPolisherToolsCommand(options: RoleToolsCommandOptions = {}
       console.log(renderDeveloperContextMarkdown(epic, listed.items, global));
     });
 
+  const epic = cmd.command("epic").description("Manage polishing notes");
+  epic
+    .command("add-note")
+    .requiredOption("--id <id>", "Epic id")
+    .requiredOption("--note <text>", "Polishing rationale")
+    .action(async function handleEpicAddNote(this: Command, options: { id: string; note: string }) {
+      const global = resolveGlobalOptions(this);
+      const updated = await service.updateEpic({
+        id: options.id,
+        addNotes: [options.note],
+        actorId: global.actorId,
+      });
+
+      console.log(
+        renderMutationMarkdown({
+          title: "Epic Note Added",
+          summary: [`Added polishing note to ${updated.id}.`],
+          result: updated,
+          verbose: global.verbose,
+        }),
+      );
+    });
+
   const item = cmd.command("item").description("Manage polishing notes");
   item
     .command("view")
@@ -613,6 +662,29 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
       console.log(renderReviewerContextMarkdown(epic, listed.items, global));
     });
 
+  const epic = cmd.command("epic").description("Manage review notes");
+  epic
+    .command("add-note")
+    .requiredOption("--id <id>", "Epic id")
+    .requiredOption("--note <text>", "Review note")
+    .action(async function handleEpicAddNote(this: Command, options: { id: string; note: string }) {
+      const global = resolveGlobalOptions(this);
+      const updated = await service.updateEpic({
+        id: options.id,
+        addNotes: [options.note],
+        actorId: global.actorId,
+      });
+
+      console.log(
+        renderMutationMarkdown({
+          title: "Epic Note Added",
+          summary: [`Added review note to ${updated.id}.`],
+          result: updated,
+          verbose: global.verbose,
+        }),
+      );
+    });
+
   const item = cmd.command("item").description("Read review target items");
   item
     .command("view")
@@ -621,6 +693,28 @@ export function createReviewerToolsCommand(options: RoleToolsCommandOptions = {}
       const global = resolveGlobalOptions(this);
       const loaded = await service.readItem({ id: options.id });
       console.log(renderItemViewMarkdown(loaded, global));
+    });
+
+  item
+    .command("add-note")
+    .requiredOption("--id <id>", "Item id")
+    .requiredOption("--note <text>", "Review note")
+    .action(async function handleItemAddNote(this: Command, options: { id: string; note: string }) {
+      const global = resolveGlobalOptions(this);
+      const updated = await service.updateItem({
+        id: options.id,
+        addNotes: [options.note],
+        actorId: global.actorId,
+      });
+
+      console.log(
+        renderMutationMarkdown({
+          title: "Item Note Added",
+          summary: [`Added review note to ${updated.id}.`],
+          result: updated,
+          verbose: global.verbose,
+        }),
+      );
     });
 
   const decision = cmd.command("decision").description("Record review decision");
@@ -890,9 +984,9 @@ function buildOrchestratorManual(executableName: string): string {
     "## Typical Examples",
     "```bash",
     `${executableName} current-context view`,
-    `${executableName} epic upsert --title \"Checkout Revamp\" --kind product --status todo`,
+    `${executableName} epic upsert --id E-012 --title \"Checkout Revamp\" --note \"Scope aligned with latest acceptance plan\"`,
     `${executableName} item view --id I-104`,
-    `${executableName} item upsert --epic E-012 --title \"Add E2E coverage\" --kind technical`,
+    `${executableName} item upsert --id I-104 --title \"Add E2E coverage\" --note \"Waiting on API contract confirmation\"`,
     `${executableName} question add --title \"Clarify discount edge-case\" --details \"...\"`,
     "```",
   ].join("\n");
@@ -926,9 +1020,10 @@ function buildDeveloperManual(executableName: string): string {
     "",
     "## Subcommands",
     "- `current-context view --epic <E-xxx>`",
+    "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
+    "- `item add-note --id <I-xxx> --note <text>`",
     "- `item start --id <I-xxx> [--note <text>]`",
-    "- `item note --id <I-xxx> --note <text>`",
     "- `item done --id <I-xxx> [--note <text>]`",
     "- `question inbox [--status open]`",
     "- `question answer --id <Q-xxx> --answer <text>`",
@@ -936,7 +1031,9 @@ function buildDeveloperManual(executableName: string): string {
     "## Typical Examples",
     "```bash",
     `${executableName} current-context view --epic E-012`,
+    `${executableName} epic add-note --id E-012 --note \"Blocked by missing staging credential\"`,
     `${executableName} item view --id I-104`,
+    `${executableName} item add-note --id I-104 --note \"Investigating flaky checkout assertion\"`,
     `${executableName} item start --id I-104 --note \"Start Playwright-first flow\"`,
     `${executableName} item done --id I-104 --note \"All tests passed\"`,
     `${executableName} question inbox`,
@@ -960,7 +1057,7 @@ function buildGatekeeperManual(executableName: string): string {
     "## Typical Examples",
     "```bash",
     `${executableName} test-case view --epic E-012`,
-    `${executableName} test-case upsert --title \"Checkout works on mobile\" --status ready --epic E-012 --item I-104`,
+    `${executableName} test-case upsert --title \"Checkout works on mobile\" --status ready [--epic E-012] [--item I-104]`,
     `${executableName} result save --id AT-033 --status passed --summary \"Desktop/mobile ok\" --last-execution-note \"2026-03-04 run\" --artifact tmp/logs/AT-033.png`,
     "```",
   ].join("\n");
@@ -975,12 +1072,14 @@ function buildPolisherManual(executableName: string): string {
     "",
     "## Subcommands",
     "- `current-context view --epic <E-xxx>`",
+    "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
     "- `item add-note --id <I-xxx> --note <text>`",
     "",
     "## Typical Examples",
     "```bash",
     `${executableName} current-context view --epic E-012`,
+    `${executableName} epic add-note --id E-012 --note \"Homepage hero still feels visually dense on tablet\"`,
     `${executableName} item view --id I-104`,
     `${executableName} item add-note --id I-104 --note \"Simplified CTA hierarchy for readability\"`,
     "```",
@@ -996,14 +1095,18 @@ function buildReviewerManual(executableName: string): string {
     "",
     "## Subcommands",
     "- `current-context view --epic <E-xxx>`",
+    "- `epic add-note --id <E-xxx> --note <text>`",
     "- `item view --id <I-xxx>`",
+    "- `item add-note --id <I-xxx> --note <text>`",
     "- `decision pass --epic <E-xxx> [--note <text>]`",
     "- `decision changes-requested --epic <E-xxx> --rationale <text>`",
     "",
     "## Typical Examples",
     "```bash",
     `${executableName} current-context view --epic E-012`,
+    `${executableName} epic add-note --id E-012 --note \"Observed borderline mobile overflow in Safari\"`,
     `${executableName} item view --id I-104`,
+    `${executableName} item add-note --id I-104 --note \"Need a regression check for empty-state rendering\"`,
     `${executableName} decision pass --epic E-012 --note \"All checks green\"`,
     `${executableName} decision changes-requested --epic E-012 --rationale \"Repro: ... Expected: ... Cause: ... Fix: ...\"`,
     "```",

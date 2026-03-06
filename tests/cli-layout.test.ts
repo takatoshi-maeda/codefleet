@@ -74,10 +74,17 @@ describe("CLI command layout", () => {
     expect(orchestrator).toContain("current-context");
     expect(orchestrator).toContain("epic");
     expect(orchestrator).toContain("item");
+    expect(orchestrator).toContain(
+      'epic upsert --id E-012 --title "Checkout Revamp" --note "Scope aligned with latest acceptance plan"',
+    );
+    expect(orchestrator).toContain(
+      'item upsert --id I-104 --title "Add E2E coverage" --note "Waiting on API contract confirmation"',
+    );
 
     const developer = await renderHelp(createDeveloperToolsCli());
     expect(developer).toContain("codefleet-developer-tools [options] [command]");
     expect(developer).toContain("current-context");
+    expect(developer).toContain("epic");
     expect(developer).toContain("item");
     expect(developer).toContain("question");
 
@@ -85,17 +92,22 @@ describe("CLI command layout", () => {
     expect(gatekeeper).toContain("codefleet-gatekeeper-tools [options] [command]");
     expect(gatekeeper).toContain("test-case");
     expect(gatekeeper).toContain("result");
+    expect(gatekeeper).toContain(
+      'test-case upsert --title "Checkout works on mobile" --status ready [--epic E-012] [--item I-104]',
+    );
   });
 
   it("exposes polisher/reviewer tools as standalone binaries", async () => {
     const polisher = await renderHelp(createPolisherToolsCli());
     expect(polisher).toContain("codefleet-polisher-tools [options] [command]");
     expect(polisher).toContain("current-context");
+    expect(polisher).toContain("epic");
     expect(polisher).toContain("item");
 
     const reviewer = await renderHelp(createReviewerToolsCli());
     expect(reviewer).toContain("codefleet-reviewer-tools [options] [command]");
     expect(reviewer).toContain("current-context");
+    expect(reviewer).toContain("epic");
     expect(reviewer).toContain("decision");
   });
 });
