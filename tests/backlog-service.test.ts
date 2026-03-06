@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BacklogService } from "../src/domain/backlog/backlog-service.js";
 import { CodefleetError } from "../src/shared/errors.js";
 
@@ -233,19 +233,74 @@ describe("BacklogService", () => {
     const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
     const item = await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [], status: "wait-implementation" });
 
-    expect(epic.statusChangedAt).toEqual({ todo: epic.updatedAt });
-    expect(item.statusChangedAt).toEqual({ "wait-implementation": item.updatedAt });
+    expect(epic.statusChangeHistory).toEqual([{ from: "todo", to: "todo", changedAt: epic.updatedAt }]);
+    expect(item.statusChangeHistory).toEqual([{ from: "wait-implementation", to: "wait-implementation", changedAt: item.updatedAt }]);
 
     const startedEpic = await service.updateEpic({ id: epic.id, status: "in-progress" });
-    expect(startedEpic.statusChangedAt.todo).toBe(epic.updatedAt);
-    expect(startedEpic.statusChangedAt["in-progress"]).toBe(startedEpic.updatedAt);
+    expect(startedEpic.statusChangeHistory).toEqual([
+      { from: "todo", to: "todo", changedAt: epic.updatedAt },
+      { from: "todo", to: "in-progress", changedAt: startedEpic.updatedAt },
+    ]);
 
     const doneItem = await service.updateItem({ id: item.id, status: "in-progress" });
     const blockedItem = await service.updateItem({ id: item.id, status: "blocked" });
-    expect(doneItem.statusChangedAt["wait-implementation"]).toBe(item.updatedAt);
-    expect(doneItem.statusChangedAt["in-progress"]).toBe(doneItem.updatedAt);
-    expect(blockedItem.statusChangedAt.blocked).toBe(blockedItem.updatedAt);
-    expect(blockedItem.statusChangedAt["wait-implementation"]).toBe(item.updatedAt);
+    expect(doneItem.statusChangeHistory).toEqual([
+      { from: "wait-implementation", to: "wait-implementation", changedAt: item.updatedAt },
+      { from: "wait-implementation", to: "in-progress", changedAt: doneItem.updatedAt },
+    ]);
+    expect(blockedItem.statusChangeHistory).toEqual([
+      { from: "wait-implementation", to: "wait-implementation", changedAt: item.updatedAt },
+      { from: "wait-implementation", to: "in-progress", changedAt: doneItem.updatedAt },
+      { from: "in-progress", to: "blocked", changedAt: blockedItem.updatedAt },
+    ]);
+  });
+
+  it("retains repeated status timestamps in visit order", async () => {
+    vi.useFakeTimers();
+    try {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+      const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+      const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+      const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+
+      await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+      await fs.writeFile(
+        acceptanceSpecPath,
+        JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+        "utf8",
+      );
+      await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+      await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+      vi.setSystemTime(new Date("2026-01-10T00:00:00.000Z"));
+      const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+      const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
+
+      vi.setSystemTime(new Date("2026-01-10T01:00:00.000Z"));
+      await service.updateEpic({ id: epic.id, status: "in-progress" });
+      vi.setSystemTime(new Date("2026-01-10T02:00:00.000Z"));
+      await service.updateEpic({ id: epic.id, status: "in-review" });
+      vi.setSystemTime(new Date("2026-01-10T03:00:00.000Z"));
+      await service.updateEpic({ id: epic.id, status: "changes-requested" });
+      vi.setSystemTime(new Date("2026-01-10T04:00:00.000Z"));
+      await service.updateEpic({ id: epic.id, status: "in-progress" });
+      vi.setSystemTime(new Date("2026-01-10T05:00:00.000Z"));
+      await service.updateEpic({ id: epic.id, status: "in-review" });
+      vi.setSystemTime(new Date("2026-01-10T06:00:00.000Z"));
+      const done = await service.updateEpic({ id: epic.id, status: "done" });
+
+      expect(done.statusChangeHistory).toEqual([
+        { from: "todo", to: "todo", changedAt: "2026-01-10T00:00:00.000Z" },
+        { from: "todo", to: "in-progress", changedAt: "2026-01-10T01:00:00.000Z" },
+        { from: "in-progress", to: "in-review", changedAt: "2026-01-10T02:00:00.000Z" },
+        { from: "in-review", to: "changes-requested", changedAt: "2026-01-10T03:00:00.000Z" },
+        { from: "changes-requested", to: "in-progress", changedAt: "2026-01-10T04:00:00.000Z" },
+        { from: "in-progress", to: "in-review", changedAt: "2026-01-10T05:00:00.000Z" },
+        { from: "in-review", to: "done", changedAt: "2026-01-10T06:00:00.000Z" },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not change per-status changedAt timestamps for non-status updates", async () => {
@@ -267,14 +322,14 @@ describe("BacklogService", () => {
     const epic = await service.addEpic({ title: "epic", acceptanceTestIds: [] });
     const item = await service.addItem({ epicId: epic.id, title: "item", acceptanceTestIds: [] });
 
-    const epicStatusChangedAt = { ...epic.statusChangedAt };
-    const itemStatusChangedAt = { ...item.statusChangedAt };
+    const epicStatusChangeHistory = epic.statusChangeHistory.map((entry) => ({ ...entry }));
+    const itemStatusChangeHistory = item.statusChangeHistory.map((entry) => ({ ...entry }));
 
     const updatedEpic = await service.updateEpic({ id: epic.id, addNotes: ["note"] });
     const updatedItem = await service.updateItem({ id: item.id, title: "renamed item" });
 
-    expect(updatedEpic.statusChangedAt).toEqual(epicStatusChangedAt);
-    expect(updatedItem.statusChangedAt).toEqual(itemStatusChangedAt);
+    expect(updatedEpic.statusChangeHistory).toEqual(epicStatusChangeHistory);
+    expect(updatedItem.statusChangeHistory).toEqual(itemStatusChangeHistory);
   });
 
   it("supports backlog question add/list/update/answer/delete", async () => {
@@ -459,8 +514,12 @@ describe("BacklogService", () => {
     const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
     const listed = await service.list();
 
-    expect(listed.epics[0]?.statusChangedAt).toEqual({ "in-review": "2026-01-02T00:00:00.000Z" });
-    expect(listed.items[0]?.statusChangedAt).toEqual({ blocked: "2026-01-03T00:00:00.000Z" });
+    expect(listed.epics[0]?.statusChangeHistory).toEqual([
+      { from: "in-review", to: "in-review", changedAt: "2026-01-02T00:00:00.000Z" },
+    ]);
+    expect(listed.items[0]?.statusChangeHistory).toEqual([
+      { from: "blocked", to: "blocked", changedAt: "2026-01-03T00:00:00.000Z" },
+    ]);
   });
 
   it("reads item by id and returns ERR_NOT_FOUND for unknown ids", async () => {

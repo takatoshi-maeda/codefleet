@@ -6,14 +6,15 @@ import type { AcceptanceTestingSpec } from "../acceptance-testing-spec-model.js"
 import type {
   BacklogEpic,
   BacklogEpicStatus,
-  BacklogEpicStatusChangedAt,
+  BacklogEpicStatusChangeHistory,
   BacklogItem,
   BacklogItems,
   BacklogItemStatus,
-  BacklogItemStatusChangedAt,
+  BacklogItemStatusChangeHistory,
   BacklogNote,
   BacklogQuestion,
   BacklogQuestionStatus,
+  StatusChangeHistoryEntry,
   BacklogWorkKind,
   VisibilityRule,
 } from "../backlog-items-model.js";
@@ -29,6 +30,21 @@ const DEFAULT_ACCEPTANCE_SPEC_PATH = ".codefleet/data/acceptance-testing/spec.js
 const DEFAULT_ROLES_PATH = ".codefleet/roles.json";
 const CHANGE_LOG_JSONL_PATH = "change-logs.jsonl";
 const READY_EPIC_STATUSES: BacklogEpicStatus[] = ["todo", "changes-requested", "failed"];
+type RawStatusChangedAtValue = string | string[];
+type RawBacklogEpicStatusChangedAt = Partial<Record<BacklogEpicStatus, RawStatusChangedAtValue>>;
+type RawBacklogItemStatusChangedAt = Partial<Record<BacklogItemStatus, RawStatusChangedAtValue>>;
+type RawBacklogEpic = Omit<BacklogEpic, "statusChangeHistory"> & {
+  statusChangeHistory?: BacklogEpicStatusChangeHistory;
+  statusChangedAt?: RawBacklogEpicStatusChangedAt;
+};
+type RawBacklogItem = Omit<BacklogItem, "statusChangeHistory"> & {
+  statusChangeHistory?: BacklogItemStatusChangeHistory;
+  statusChangedAt?: RawBacklogItemStatusChangedAt;
+};
+type RawBacklogItems = Omit<BacklogItems, "epics" | "items"> & {
+  epics: RawBacklogEpic[];
+  items: RawBacklogItem[];
+};
 
 type AgentRole = "Orchestrator" | "Curator" | "Developer" | "Polisher" | "Gatekeeper" | "Reviewer";
 type JsonLogValue = string | number | boolean | null | JsonLogValue[] | { [key: string]: JsonLogValue };
@@ -131,7 +147,7 @@ type NormalizedBacklogItems = Omit<BacklogItems, "questions"> & { questions: Bac
 
 export class BacklogService {
   private readonly backlogDir: string;
-  private readonly itemsRepository: JsonRepository<BacklogItems>;
+  private readonly itemsRepository: JsonRepository<RawBacklogItems>;
   private readonly acceptanceSpecRepository: JsonRepository<AcceptanceTestingSpec>;
   private readonly rolesRepository: JsonRepository<Roles>;
 
@@ -141,7 +157,7 @@ export class BacklogService {
     rolesPath: string = DEFAULT_ROLES_PATH,
   ) {
     this.backlogDir = backlogDir;
-    this.itemsRepository = new JsonRepository<BacklogItems>(
+    this.itemsRepository = new JsonRepository<RawBacklogItems>(
       path.join(backlogDir, "items.json"),
       SCHEMA_PATHS.backlogItems,
     );
@@ -232,8 +248,9 @@ export class BacklogService {
     // This prevents repeated backlog.epic.ready dispatches from selecting the same epic again.
     ensureValidEpicStatusTransition(candidate.status, "in-progress");
     const now = new Date().toISOString();
+    const previousStatus = candidate.status;
     candidate.status = "in-progress";
-    candidate.statusChangedAt = recordEpicStatusChange(candidate.statusChangedAt, candidate.status, now);
+    candidate.statusChangeHistory = recordStatusChange(candidate.statusChangeHistory, previousStatus, candidate.status, now);
     candidate.updatedAt = now;
     items.updatedAt = now;
 
@@ -265,16 +282,18 @@ export class BacklogService {
       if (!updatedEpicIdSet.has(epic.id)) {
         continue;
       }
+      const previousStatus = epic.status;
       epic.status = "todo";
-      epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, epic.status, now);
+      epic.statusChangeHistory = recordStatusChange(epic.statusChangeHistory, previousStatus, epic.status, now);
       epic.updatedAt = now;
     }
     for (const item of items.items) {
       if (!updatedItemIdSet.has(item.id)) {
         continue;
       }
+      const previousStatus = item.status;
       item.status = "todo";
-      item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, item.status, now);
+      item.statusChangeHistory = recordStatusChange(item.statusChangeHistory, previousStatus, item.status, now);
       item.updatedAt = now;
     }
     items.updatedAt = now;
@@ -312,16 +331,18 @@ export class BacklogService {
       if (!updatedEpicIdSet.has(epic.id)) {
         continue;
       }
+      const previousStatus = epic.status;
       epic.status = "todo";
-      epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, epic.status, now);
+      epic.statusChangeHistory = recordStatusChange(epic.statusChangeHistory, previousStatus, epic.status, now);
       epic.updatedAt = now;
     }
     for (const item of items.items) {
       if (!updatedItemIdSet.has(item.id)) {
         continue;
       }
+      const previousStatus = item.status;
       item.status = "todo";
-      item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, item.status, now);
+      item.statusChangeHistory = recordStatusChange(item.statusChangeHistory, previousStatus, item.status, now);
       item.updatedAt = now;
     }
     items.updatedAt = now;
@@ -353,7 +374,7 @@ export class BacklogService {
       kind: input.kind ?? "product",
       notes: buildNotes([], input.notes, input.actorId, now),
       status: input.status ?? "todo",
-      statusChangedAt: { [input.status ?? "todo"]: now },
+      statusChangeHistory: [buildStatusHistorySeed(input.status ?? "todo", now)],
       visibility: input.visibility ?? defaultVisibility(),
       acceptanceTestIds: unique(input.acceptanceTestIds),
       updatedAt: now,
@@ -386,8 +407,9 @@ export class BacklogService {
         ensureValidEpicStatusTransition(epic.status, input.status, input.reopen ?? false);
       }
       if (epic.status !== input.status) {
+        const previousStatus = epic.status;
         epic.status = input.status;
-        epic.statusChangedAt = recordEpicStatusChange(epic.statusChangedAt, input.status, now);
+        epic.statusChangeHistory = recordStatusChange(epic.statusChangeHistory, previousStatus, input.status, now);
       }
     }
 
@@ -459,7 +481,7 @@ export class BacklogService {
       kind: input.kind ?? "product",
       notes: buildNotes([], input.notes, input.actorId, now),
       status: input.status ?? "todo",
-      statusChangedAt: { [input.status ?? "todo"]: now },
+      statusChangeHistory: [buildStatusHistorySeed(input.status ?? "todo", now)],
       acceptanceTestIds: unique(input.acceptanceTestIds),
       updatedAt: now,
     };
@@ -489,8 +511,9 @@ export class BacklogService {
     if (input.status) {
       ensureValidItemStatusTransition(item.status, input.status, input.reopen ?? false);
       if (item.status !== input.status) {
+        const previousStatus = item.status;
         item.status = input.status;
-        item.statusChangedAt = recordItemStatusChange(item.statusChangedAt, input.status, now);
+        item.statusChangeHistory = recordStatusChange(item.statusChangeHistory, previousStatus, input.status, now);
       }
     }
 
@@ -625,9 +648,9 @@ export class BacklogService {
     } catch (error) {
       if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
         const now = new Date().toISOString();
-        const initial: NormalizedBacklogItems = { version: 1, updatedAt: now, epics: [], items: [], questions: [] };
+        const initial: RawBacklogItems = { version: 1, updatedAt: now, epics: [], items: [], questions: [] };
         await this.itemsRepository.save(initial);
-        return initial;
+        return normalizeBacklogItems(initial);
       }
       throw error;
     }
@@ -664,7 +687,7 @@ export class BacklogService {
   }
 
   private async persistWithChangeLog(
-    items: BacklogItems,
+    items: RawBacklogItems,
     operation: string,
     parameters: object,
     fallbackReason: string,
@@ -856,67 +879,88 @@ function nextQuestionId(questions: BacklogQuestion[]): string {
   return `Q-${String(maxSequence + 1).padStart(3, "0")}`;
 }
 
-function normalizeBacklogItems(items: BacklogItems): NormalizedBacklogItems {
+function normalizeBacklogItems(items: RawBacklogItems): NormalizedBacklogItems {
   return {
     ...items,
-    epics: items.epics.map((epic) => ({
+    epics: items.epics.map(({ statusChangedAt: legacyStatusChangedAt, ...epic }) => ({
       ...epic,
       kind: epic.kind ?? "product",
       notes: normalizeNotes(epic.notes, epic.updatedAt),
-      statusChangedAt: normalizeEpicStatusChangedAt(epic.statusChangedAt, epic.status, epic.updatedAt),
+      statusChangeHistory: normalizeEpicStatusChangeHistory(epic.statusChangeHistory, legacyStatusChangedAt, epic.status, epic.updatedAt),
     })),
-    items: items.items.map((item) => ({
+    items: items.items.map(({ statusChangedAt: legacyStatusChangedAt, ...item }) => ({
       ...item,
       kind: item.kind ?? "product",
       notes: normalizeNotes(item.notes, item.updatedAt),
-      statusChangedAt: normalizeItemStatusChangedAt(item.statusChangedAt, item.status, item.updatedAt),
+      statusChangeHistory: normalizeItemStatusChangeHistory(item.statusChangeHistory, legacyStatusChangedAt, item.status, item.updatedAt),
     })),
     questions: items.questions ? [...items.questions] : [],
   };
 }
 
-function normalizeEpicStatusChangedAt(
-  statusChangedAt: BacklogEpicStatusChangedAt | undefined,
+function normalizeEpicStatusChangeHistory(
+  statusChangeHistory: BacklogEpicStatusChangeHistory | undefined,
+  statusChangedAt: RawBacklogEpicStatusChangedAt | undefined,
   currentStatus: BacklogEpicStatus,
   fallbackChangedAt: string,
-): BacklogEpicStatusChangedAt {
-  // Legacy snapshots only know the current status; seed that entry without inventing
-  // timestamps for statuses the entity may never have visited.
-  return recordEpicStatusChange(statusChangedAt, currentStatus, fallbackChangedAt, false);
+): BacklogEpicStatusChangeHistory {
+  return normalizeStatusChangeHistory(statusChangeHistory, statusChangedAt, currentStatus, fallbackChangedAt);
 }
 
-function normalizeItemStatusChangedAt(
-  statusChangedAt: BacklogItemStatusChangedAt | undefined,
+function normalizeItemStatusChangeHistory(
+  statusChangeHistory: BacklogItemStatusChangeHistory | undefined,
+  statusChangedAt: RawBacklogItemStatusChangedAt | undefined,
   currentStatus: BacklogItemStatus,
   fallbackChangedAt: string,
-): BacklogItemStatusChangedAt {
-  return recordItemStatusChange(statusChangedAt, currentStatus, fallbackChangedAt, false);
+): BacklogItemStatusChangeHistory {
+  return normalizeStatusChangeHistory(statusChangeHistory, statusChangedAt, currentStatus, fallbackChangedAt);
 }
 
-function recordEpicStatusChange(
-  statusChangedAt: BacklogEpicStatusChangedAt | undefined,
-  status: BacklogEpicStatus,
-  changedAt: string,
-  overwrite = true,
-): BacklogEpicStatusChangedAt {
-  // We keep the latest timestamp per status. Re-entering a prior state should replace
-  // that state's timestamp, while normalization preserves already-recorded values.
-  if (!overwrite && statusChangedAt?.[status]) {
-    return { ...statusChangedAt };
+function normalizeStatusChangeHistory<TStatus extends string>(
+  statusChangeHistory: StatusChangeHistoryEntry<TStatus>[] | undefined,
+  statusChangedAt: Partial<Record<TStatus, RawStatusChangedAtValue>> | undefined,
+  currentStatus: TStatus,
+  fallbackChangedAt: string,
+): StatusChangeHistoryEntry<TStatus>[] {
+  if (statusChangeHistory && statusChangeHistory.length > 0) {
+    return statusChangeHistory.map((entry) => ({ ...entry }));
   }
-  return { ...(statusChangedAt ?? {}), [status]: changedAt };
+  if (statusChangedAt) {
+    return convertStatusChangedAtToHistory(statusChangedAt);
+  }
+  // Legacy snapshots sometimes only have current status + updatedAt.
+  return [buildStatusHistorySeed(currentStatus, fallbackChangedAt)];
 }
 
-function recordItemStatusChange(
-  statusChangedAt: BacklogItemStatusChangedAt | undefined,
-  status: BacklogItemStatus,
+function recordStatusChange<TStatus extends string>(
+  statusChangeHistory: StatusChangeHistoryEntry<TStatus>[] | undefined,
+  from: TStatus,
+  to: TStatus,
   changedAt: string,
-  overwrite = true,
-): BacklogItemStatusChangedAt {
-  if (!overwrite && statusChangedAt?.[status]) {
-    return { ...statusChangedAt };
-  }
-  return { ...(statusChangedAt ?? {}), [status]: changedAt };
+): StatusChangeHistoryEntry<TStatus>[] {
+  const normalized = statusChangeHistory ? statusChangeHistory.map((entry) => ({ ...entry })) : [];
+  return [...normalized, { from, to, changedAt }];
+}
+
+function buildStatusHistorySeed<TStatus extends string>(status: TStatus, changedAt: string): StatusChangeHistoryEntry<TStatus> {
+  return { from: status, to: status, changedAt };
+}
+
+function convertStatusChangedAtToHistory<TStatus extends string>(
+  statusChangedAt: Partial<Record<TStatus, RawStatusChangedAtValue>>,
+): StatusChangeHistoryEntry<TStatus>[] {
+  const entries = (Object.entries(statusChangedAt) as Array<[TStatus, RawStatusChangedAtValue]>).flatMap(([status, rawHistory]) =>
+    normalizeLegacyStatusChangedAtValue(rawHistory).map((changedAt) => ({
+      from: status,
+      to: status,
+      changedAt,
+    })),
+  );
+  return entries.sort((left, right) => left.changedAt.localeCompare(right.changedAt));
+}
+
+function normalizeLegacyStatusChangedAtValue(history: RawStatusChangedAtValue): string[] {
+  return Array.isArray(history) ? [...history] : [history];
 }
 
 function isVisible(epic: BacklogEpic, epicsById: Map<string, BacklogEpic>): boolean {
