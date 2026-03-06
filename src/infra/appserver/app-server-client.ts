@@ -12,6 +12,7 @@ export interface StartAgentInput {
   cwd: string;
   detached: boolean;
   playwrightServerUrl?: string;
+  codexConfig?: Record<string, unknown>;
 }
 
 export interface StartAgentResult {
@@ -27,6 +28,7 @@ export interface StartTurnInput {
 export interface StartThreadInput {
   baseInstructions?: string;
   networkAccess?: boolean;
+  codexConfig?: Record<string, unknown>;
 }
 
 export interface AppServerNotification {
@@ -55,6 +57,7 @@ interface PendingTurnCompletion {
 interface AppServerConnection {
   agentId: string;
   startupPrompt: string;
+  codexConfig: Record<string, unknown>;
   child: ChildProcessByStdio<Writable, Readable, null>;
   reader: readline.Interface;
   pending: Map<number, PendingResponse>;
@@ -95,7 +98,7 @@ export class AppServerClient {
   async startAgent(input: StartAgentInput): Promise<StartAgentResult> {
     // Role-specific prompts are passed through env to preserve a single startup entrypoint while
     // keeping role boot instructions explicit per lifecycle event trigger.
-    const child = spawn("codex", ["-a", "never", "app-server"], {
+    const child = spawn("codex", buildAppServerArgs(input.codexConfig), {
       cwd: input.cwd,
       detached: input.detached,
       stdio: ["pipe", "pipe", "ignore"],
@@ -111,6 +114,7 @@ export class AppServerClient {
     const connection: AppServerConnection = {
       agentId: input.agentId,
       startupPrompt: input.prompt,
+      codexConfig: input.codexConfig ?? {},
       child,
       reader,
       pending: new Map(),
@@ -158,6 +162,7 @@ export class AppServerClient {
   async startThread(agentId: string, input: StartThreadInput = {}): Promise<{ threadId: string; lastNotificationAt: string }> {
     const connection = this.requireConnection(agentId);
     const networkAccess = input.networkAccess ?? AGENT_THREAD_NETWORK_ACCESS_DEFAULT;
+    const codexConfig = input.codexConfig ?? connection.codexConfig;
     // Pin thread defaults here so resumed work stays on the same model/policy without per-turn drift.
     const response = await sendRequest(connection, "thread/start", {
       approvalPolicy: AGENT_APPROVAL_POLICY,
@@ -169,7 +174,7 @@ export class AppServerClient {
           network_access: networkAccess,
         },
       },
-      model: AGENT_MODEL,
+      model: readCodexModel(codexConfig),
       baseInstructions: input.baseInstructions ?? null,
     });
     return {
@@ -185,7 +190,7 @@ export class AppServerClient {
       threadId,
       approvalPolicy: AGENT_APPROVAL_POLICY,
       sandbox: AGENT_SANDBOX_MODE,
-      model: AGENT_MODEL,
+      model: readCodexModel(connection.codexConfig),
     });
     return {
       threadId: parseThreadId(response, "thread/resume"),
@@ -198,8 +203,8 @@ export class AppServerClient {
     const response = await sendRequest(connection, "turn/start", {
       threadId: input.threadId,
       input: input.input,
-      model: AGENT_MODEL,
-      effort: AGENT_REASONING_EFFORT,
+      model: readCodexModel(connection.codexConfig),
+      effort: readCodexReasoningEffort(connection.codexConfig),
     });
     return {
       turnId: parseTurnId(response),
@@ -262,6 +267,55 @@ export class AppServerClient {
     }
     return connection;
   }
+}
+
+function buildAppServerArgs(codexConfig: Record<string, unknown> | undefined): string[] {
+  const args = ["-a", AGENT_APPROVAL_POLICY];
+  for (const [key, value] of flattenCodexConfigEntries(codexConfig ?? {})) {
+    args.push("-c", `${key}=${serializeCodexConfigValue(value)}`);
+  }
+  args.push("app-server");
+  return args;
+}
+
+function flattenCodexConfigEntries(
+  value: Record<string, unknown>,
+  prefix?: string,
+): Array<[key: string, value: unknown]> {
+  const entries: Array<[key: string, value: unknown]> = [];
+  for (const [key, child] of Object.entries(value)) {
+    const nextKey = prefix ? `${prefix}.${key}` : key;
+    if (isPlainObject(child)) {
+      entries.push(...flattenCodexConfigEntries(child, nextKey));
+      continue;
+    }
+    entries.push([nextKey, child]);
+  }
+  return entries;
+}
+
+function serializeCodexConfigValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (value === null) {
+    return "null";
+  }
+  return JSON.stringify(value);
+}
+
+function readCodexModel(codexConfig: Record<string, unknown>): string {
+  return typeof codexConfig.model === "string" && codexConfig.model.length > 0 ? codexConfig.model : AGENT_MODEL;
+}
+
+function readCodexReasoningEffort(codexConfig: Record<string, unknown>): string {
+  return typeof codexConfig.model_reasoning_effort === "string" && codexConfig.model_reasoning_effort.length > 0
+    ? codexConfig.model_reasoning_effort
+    : AGENT_REASONING_EFFORT;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function wireConnectionLifecycle(

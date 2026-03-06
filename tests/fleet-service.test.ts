@@ -31,8 +31,9 @@ class FakeAppServerClient {
     prompt: string;
     detached: boolean;
     playwrightServerUrl?: string;
+    codexConfig?: Record<string, unknown>;
   }> = [];
-  public startedThreads: Array<{ agentId: string; baseInstructions?: string }> = [];
+  public startedThreads: Array<{ agentId: string; baseInstructions?: string; codexConfig?: Record<string, unknown> }> = [];
   public startedTurns: Array<{ agentId: string; threadId: string; input: Array<{ type: "text"; text: string }> }> = [];
   public completedTurns: Array<{ agentId: string; threadId: string; turnId: string }> = [];
   public shutdowns: string[] = [];
@@ -44,6 +45,7 @@ class FakeAppServerClient {
     cwd: string;
     detached: boolean;
     playwrightServerUrl?: string;
+    codexConfig?: Record<string, unknown>;
   }): Promise<FleetProcessStartResult> {
     this.started.push({
       agentId: input.agentId,
@@ -51,6 +53,7 @@ class FakeAppServerClient {
       prompt: input.prompt,
       detached: input.detached,
       playwrightServerUrl: input.playwrightServerUrl,
+      codexConfig: input.codexConfig,
     });
     return {
       pid: 12345,
@@ -68,9 +71,9 @@ class FakeAppServerClient {
 
   async startThread(
     agentId: string,
-    input: { baseInstructions?: string } = {},
+    input: { baseInstructions?: string; codexConfig?: Record<string, unknown> } = {},
   ): Promise<{ threadId: string; lastNotificationAt: string }> {
-    this.startedThreads.push({ agentId, baseInstructions: input.baseInstructions });
+    this.startedThreads.push({ agentId, baseInstructions: input.baseInstructions, codexConfig: input.codexConfig });
     return {
       threadId: `${agentId}-new-thread`,
       lastNotificationAt: "2026-01-01T00:00:02.000Z",
@@ -363,7 +366,7 @@ describe("FleetService", () => {
     });
 
     expect(appServer.startedThreads).toEqual([
-      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語." },
+      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語.", codexConfig: {} },
     ]);
     expect(appServer.startedTurns).toHaveLength(1);
     expect(appServer.startedTurns[0]?.agentId).toBe("curator-1");
@@ -423,8 +426,60 @@ describe("FleetService", () => {
     });
 
     expect(appServer.startedThreads).toEqual([
-      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語." },
+      { agentId: "curator-1", baseInstructions: "All responses must be in 日本語.", codexConfig: {} },
     ]);
+  });
+
+  it("passes .codefleet/config.json codex settings into AppServer startup and thread creation", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          codex: {
+            model: "gpt-5-mini-codex",
+            model_reasoning_effort: "medium",
+          },
+          hooks: {},
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up();
+    expect(appServer.started[0]?.codexConfig).toEqual({
+      model: "gpt-5-mini-codex",
+      model_reasoning_effort: "medium",
+    });
+
+    await service.dispatchAgentEvent({
+      agentId: "curator-1",
+      agentRole: "Curator",
+      event: { type: "docs.update", paths: ["docs/spec.md"] },
+    });
+
+    expect(appServer.startedThreads[0]?.codexConfig).toEqual({
+      model: "gpt-5-mini-codex",
+      model_reasoning_effort: "medium",
+    });
   });
 
   it("emits acceptance-test.update after gatekeeper handles source-brief.update", async () => {

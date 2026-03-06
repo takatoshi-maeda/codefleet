@@ -56,6 +56,7 @@ export class FleetService {
   private readonly sessionRepository: JsonRepository<AppServerSessionCollection>;
   private threadResponseLanguage?: string;
   private reviewerPlaywrightServerUrl?: string;
+  private codexConfig: Record<string, unknown> = {};
 
   constructor(
     private readonly rolesPath: string = DEFAULT_ROLES_PATH,
@@ -110,8 +111,10 @@ export class FleetService {
     lang?: string;
     playwrightServerUrl?: string;
   } = {}): Promise<FleetStatus> {
-    this.threadResponseLanguage = await this.resolveThreadResponseLanguage(input.lang);
+    const config = await this.readConfigFile();
+    this.threadResponseLanguage = this.resolveThreadResponseLanguage(input.lang, config);
     this.reviewerPlaywrightServerUrl = normalizePlaywrightServerUrl(input.playwrightServerUrl);
+    this.codexConfig = readCodexConfig(config);
     if (this.apiServerLifecycle) {
       try {
         await this.apiServerLifecycle.start();
@@ -158,6 +161,7 @@ export class FleetService {
           cwd: process.cwd(),
           detached: Boolean(input.detached),
           playwrightServerUrl: target.role === "Reviewer" ? this.reviewerPlaywrightServerUrl : undefined,
+          codexConfig: this.codexConfig,
         });
         runtimeAgent.pid = processStart.pid;
         runtimeAgent.startedAt = processStart.startedAt;
@@ -310,6 +314,7 @@ export class FleetService {
 
       const started = await this.appServerClient.startThread(input.agentId, {
         baseInstructions: buildThreadLanguageInstruction(this.threadResponseLanguage),
+        codexConfig: this.codexConfig,
       });
       const threadId = started.threadId;
       const prompt = await this.buildEventPrompt(input.agentRole, input.event);
@@ -467,13 +472,14 @@ export class FleetService {
     return parseRoleHooksByAgentRole(config.hooks);
   }
 
-  private async resolveThreadResponseLanguage(explicitLang: string | undefined): Promise<string | undefined> {
+  private resolveThreadResponseLanguage(
+    explicitLang: string | undefined,
+    config: Record<string, unknown> | null,
+  ): string | undefined {
     const normalizedExplicit = normalizeLanguage(explicitLang);
     if (normalizedExplicit) {
       return normalizedExplicit;
     }
-
-    const config = await this.readConfigFile();
     if (!config) {
       return undefined;
     }
@@ -515,6 +521,16 @@ function buildThreadLanguageInstruction(lang: string | undefined): string | unde
   }
   // This instruction is injected at thread start so all replies in the thread consistently follow the requested language.
   return `All responses must be in ${lang}.`;
+}
+
+function readCodexConfig(config: Record<string, unknown> | null): Record<string, unknown> {
+  if (!config || !("codex" in config) || config.codex === undefined) {
+    return {};
+  }
+  if (!isRecord(config.codex)) {
+    throw new CodefleetError("ERR_VALIDATION", "config.codex must be a JSON object");
+  }
+  return config.codex;
 }
 
 function parseRoleHooksByAgentRole(value: unknown): RoleHooksByAgentRole {
