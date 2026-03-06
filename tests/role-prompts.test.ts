@@ -7,9 +7,9 @@ describe("role prompts", () => {
     const eventPrompt = await getRoleEventPromptTemplate("Curator", "source-brief.update");
 
     expect(startupPrompt).toContain("Implementation Constraints");
-    expect(startupPrompt).toContain("Write the `Implementation Constraints` section in English");
+    expect(startupPrompt).toContain("reuse it verbatim as implementation guidance");
     expect(eventPrompt).toContain("Implementation Constraints");
-    expect(eventPrompt).toContain("Write the `Implementation Constraints` section in English");
+    expect(eventPrompt).not.toContain("Write the `Implementation Constraints` section in English");
   });
 
   it("treats implementation constraints as normative in gatekeeper planning", async () => {

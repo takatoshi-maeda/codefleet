@@ -14,7 +14,6 @@ Objectives:
   - Definition of Done
   - Documentation Index
 - Do not add any other top-level sections to the Source Brief.
-- Write the `Implementation Constraints` section in English.
 - Use `Implementation Constraints` for implementation-facing rules that downstream roles should preserve, such as design-system requirements, mandated component usage, prohibited implementation patterns, technology constraints, and explicitly allowed exceptions.
 - Include explicit traceability back to the updated source paths, especially in Documentation Index.
 
