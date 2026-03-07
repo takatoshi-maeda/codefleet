@@ -2,7 +2,6 @@ import { spawn, type ChildProcessByStdio } from "node:child_process";
 import readline from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { CodefleetError } from "../../shared/errors.js";
-import type { AppServerSession } from "../../domain/app-server-session-model.js";
 import type { AgentRole } from "../../domain/roles-model.js";
 
 export interface StartAgentInput {
@@ -40,6 +39,12 @@ export interface AppServerNotification {
 
 export interface AppServerClientOptions {
   onNotification?: (notification: AppServerNotification) => void;
+}
+
+export interface AppServerHandshakeResult {
+  threadId: string | null;
+  activeTurnId: string | null;
+  lastNotificationAt: string;
 }
 
 interface PendingResponse {
@@ -140,7 +145,7 @@ export class AppServerClient {
     };
   }
 
-  async handshake(agentId: string): Promise<Pick<AppServerSession, "threadId" | "activeTurnId" | "lastNotificationAt">> {
+  async handshake(agentId: string): Promise<AppServerHandshakeResult> {
     const connection = this.requireConnection(agentId);
 
     await sendRequest(connection, "initialize", {

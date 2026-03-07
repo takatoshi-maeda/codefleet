@@ -11,8 +11,8 @@ import type {
   PrepareRoleAgentResult,
   RoleAgentRuntime,
 } from "../src/domain/fleet/role-agent-runtime.js";
+import type { AgentSession } from "../src/domain/agent-session-model.js";
 import type { AgentRole } from "../src/domain/roles-model.js";
-import type { AppServerSession } from "../src/domain/app-server-session-model.js";
 import type { FleetProcessStartResult } from "../src/infra/process/fleet-process-manager.js";
 import type { HookCommandRunner } from "../src/infra/process/hook-command-runner.js";
 
@@ -68,7 +68,7 @@ class FakeAppServerClient {
     };
   }
 
-  async handshake(agentId: string): Promise<Pick<AppServerSession, "threadId" | "activeTurnId" | "lastNotificationAt">> {
+  async handshake(agentId: string): Promise<{ threadId: string | null; activeTurnId: string | null; lastNotificationAt: string }> {
     return {
       threadId: `${agentId}-thread`,
       activeTurnId: `${agentId}-turn`,
@@ -142,8 +142,8 @@ class FakeRoleAgentRuntime implements RoleAgentRuntime {
       pid: 4444,
       startedAt: "2026-01-01T00:00:00.000Z",
       session: {
-        threadId: `${input.agentId}-prepared-thread`,
-        activeTurnId: `${input.agentId}-prepared-turn`,
+        conversationId: `${input.agentId}-prepared-thread`,
+        activeInvocationId: `${input.agentId}-prepared-turn`,
         lastActivityAt: "2026-01-01T00:00:01.000Z",
       },
     };
@@ -154,8 +154,8 @@ class FakeRoleAgentRuntime implements RoleAgentRuntime {
     return {
       provider: this.provider,
       session: {
-        threadId: `${input.agentId}-runtime-thread`,
-        activeTurnId: `${input.agentId}-runtime-turn`,
+        conversationId: `${input.agentId}-runtime-thread`,
+        activeInvocationId: `${input.agentId}-runtime-turn`,
         lastActivityAt: "2026-01-01T00:00:02.000Z",
       },
     };
@@ -321,6 +321,7 @@ describe("FleetService", () => {
     expect(upStatus.summary).toBe("running");
     expect(upStatus.agents).toHaveLength(6);
     expect(upStatus.agents.every((agent) => agent.status === "running")).toBe(true);
+    expect(upStatus.agents.every((agent) => agent.provider === "codex-app-server")).toBe(true);
     expect(upStatus.sessions.every((session) => session.status === "ready")).toBe(true);
     expect(appServer.started).toEqual([
       expect.objectContaining({ agentId: "orchestrator-1", role: "Orchestrator", detached: false }),
@@ -391,9 +392,10 @@ describe("FleetService", () => {
     expect(appServer.startedTurns).toEqual([]);
 
     const status = await service.status("Curator");
-    expect(status.sessions[0]).toMatchObject({
-      threadId: "curator-1-runtime-thread",
-      activeTurnId: "curator-1-runtime-turn",
+    expect(status.sessions[0]).toMatchObject<Partial<AgentSession>>({
+      provider: "codex-app-server",
+      conversationId: "curator-1-runtime-thread",
+      activeInvocationId: "curator-1-runtime-turn",
     });
 
     await service.down({ all: true });
@@ -477,8 +479,8 @@ describe("FleetService", () => {
     ]);
 
     const status = await service.status("Curator");
-    expect(status.sessions[0]?.threadId).toBe("curator-1-new-thread");
-    expect(status.sessions[0]?.activeTurnId).toBe("curator-1-event-turn");
+    expect(status.sessions[0]?.conversationId).toBe("curator-1-new-thread");
+    expect(status.sessions[0]?.activeInvocationId).toBe("curator-1-event-turn");
   });
 
   it("uses lang from .codefleet/config.json when up input omits lang", async () => {
@@ -576,6 +578,152 @@ describe("FleetService", () => {
       model: "gpt-5-mini-codex",
       model_reasoning_effort: "medium",
     });
+  });
+
+  it("resolves role-specific agentRuntime config before legacy codex defaults", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    const configPath = path.join(tempDir, ".codefleet/config.json");
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await fs.writeFile(
+      configPath,
+      JSON.stringify(
+        {
+          lang: "ja",
+          docsRepository: "https://example.com/spec.git",
+          agentRuntime: {
+            default: {
+              provider: "codex-app-server",
+              config: { model: "gpt-default-codex" },
+            },
+            roles: {
+              Curator: {
+                provider: "codex-app-server",
+                config: { model: "gpt-curator-codex", model_reasoning_effort: "low" },
+              },
+            },
+          },
+          codex: {
+            model: "legacy-codex-should-not-win",
+          },
+          hooks: {},
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const appServer = new FakeAppServerClient();
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      appServer as never,
+    );
+
+    await service.up({ gatekeepers: 0, developers: 1, polishers: 0, reviewers: 0 });
+    expect(appServer.started.find((entry) => entry.agentId === "curator-1")?.codexConfig).toEqual({
+      model: "gpt-curator-codex",
+      model_reasoning_effort: "low",
+    });
+    expect(appServer.started.find((entry) => entry.agentId === "developer-1")?.codexConfig).toEqual({
+      model: "gpt-default-codex",
+    });
+
+    await service.dispatchAgentEvent({
+      agentId: "curator-1",
+      agentRole: "Curator",
+      event: { type: "docs.update", paths: ["docs/spec.md"] },
+    });
+
+    expect(appServer.startedThreads[0]?.codexConfig).toEqual({
+      model: "gpt-curator-codex",
+      model_reasoning_effort: "low",
+    });
+    expect((await service.status("Curator")).agents[0]?.provider).toBe("codex-app-server");
+  });
+
+  it("migrates legacy runtime and app-server session state into provider-neutral models", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
+    const logDir = path.join(tempDir, ".codefleet/logs/agents");
+    await fs.mkdir(runtimeDir, { recursive: true });
+    await fs.writeFile(
+      path.join(runtimeDir, "agents.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          agents: [
+            {
+              id: "curator-1",
+              role: "Curator",
+              status: "running",
+              pid: 12345,
+              cwd: "/workspace",
+              startedAt: "2026-01-01T00:00:00.000Z",
+              lastHeartbeatAt: "2026-01-01T00:00:01.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    await fs.writeFile(
+      path.join(runtimeDir, "app-server-sessions.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          sessions: [
+            {
+              agentId: "curator-1",
+              status: "ready",
+              initialized: true,
+              threadId: "legacy-thread",
+              activeTurnId: "legacy-turn",
+              lastNotificationAt: "2026-01-01T00:00:02.000Z",
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const service = new FleetService(
+      rolesPath,
+      runtimeDir,
+      logDir,
+      new FakeProcessManager() as never,
+      new FakeAppServerClient() as never,
+    );
+
+    const status = await service.status("Curator");
+    expect(status.agents[0]).toMatchObject({
+      id: "curator-1",
+      provider: "codex-app-server",
+    });
+    expect(status.sessions[0]).toMatchObject<Partial<AgentSession>>({
+      agentId: "curator-1",
+      provider: "codex-app-server",
+      conversationId: "legacy-thread",
+      activeInvocationId: "legacy-turn",
+      lastActivityAt: "2026-01-01T00:00:02.000Z",
+    });
+
+    const migratedSessions = JSON.parse(
+      await fs.readFile(path.join(runtimeDir, "agent-sessions.json"), "utf8"),
+    ) as { sessions: AgentSession[] };
+    expect(migratedSessions.sessions[0]?.conversationId).toBe("legacy-thread");
   });
 
   it("emits acceptance-test.update after gatekeeper handles source-brief.update", async () => {

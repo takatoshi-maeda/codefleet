@@ -51,11 +51,18 @@ describe("init command", () => {
     const config = JSON.parse(await fs.readFile(path.join(tempDir, ".codefleet", "config.json"), "utf8")) as {
       lang: string;
       docsRepository: string;
+      agentRuntime: Record<string, unknown>;
       hooks: Record<string, unknown>;
     };
     expect(config).toEqual({
       lang: "ja",
       docsRepository: "https://github.com/example/docs-spec.git",
+      agentRuntime: {
+        default: {
+          provider: "codex-app-server",
+          config: {},
+        },
+      },
       hooks: {
         Orchestrator: { before_start: [], after_complete: [], after_fail: [] },
         Curator: { before_start: [], after_complete: [], after_fail: [] },

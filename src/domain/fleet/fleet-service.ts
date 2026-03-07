@@ -6,14 +6,14 @@ import { JsonRepository } from "../../infra/fs/json-repository.js";
 import { FleetProcessManager } from "../../infra/process/fleet-process-manager.js";
 import { CodefleetError } from "../../shared/errors.js";
 import { SYSTEM_EVENT_TYPES, type SystemEvent } from "../../events/router.js";
+import type { AgentSession, AgentSessionCollection } from "../agent-session-model.js";
 import type { AgentRuntime, AgentRuntimeCollection } from "../agent-runtime-model.js";
-import type { AppServerSession, AppServerSessionCollection } from "../app-server-session-model.js";
 import type { AgentEventQueueMessage } from "../events/agent-event-queue-message-model.js";
 import type { RoleHookPhase, RoleHooksByAgentRole } from "../hooks-model.js";
 import type { AgentRole } from "../roles-model.js";
 import { SCHEMA_PATHS } from "../schema-paths.js";
 import { ShellHookCommandRunner, type HookCommandRunner } from "../../infra/process/hook-command-runner.js";
-import type { RoleAgentRuntime } from "./role-agent-runtime.js";
+import type { AgentProviderId, RoleAgentRuntime } from "./role-agent-runtime.js";
 import type {
   FleetApiServerLifecycle,
   FleetApiServerStatus,
@@ -33,11 +33,18 @@ const DEFAULT_DESIGNER_COUNT = 1;
 const DEFAULT_REVIEWER_COUNT = 1;
 const FIXED_ORCHESTRATOR_COUNT = 1;
 const FIXED_CURATOR_COUNT = 1;
+const LEGACY_APP_SERVER_SESSION_FILE = "app-server-sessions.json";
+const SUPPORTED_AGENT_PROVIDERS = ["codex-app-server", "claude-agent-sdk"] as const;
+
+interface ResolvedRoleRuntimeConfig {
+  provider: AgentProviderId | "claude-agent-sdk";
+  config: Record<string, unknown>;
+}
 
 export interface FleetStatus {
   summary: "running" | "stopped" | "degraded";
   agents: AgentRuntime[];
-  sessions: AppServerSession[];
+  sessions: AgentSession[];
   apiServer?: FleetApiServerStatus;
   discoveredApiServers?: FleetDiscoveredApiServer[];
 }
@@ -55,10 +62,10 @@ export interface DispatchAgentEventInput {
 
 export class FleetService {
   private readonly runtimeRepository: JsonRepository<AgentRuntimeCollection>;
-  private readonly sessionRepository: JsonRepository<AppServerSessionCollection>;
+  private readonly sessionRepository: JsonRepository<AgentSessionCollection>;
   private threadResponseLanguage?: string;
   private reviewerPlaywrightServerUrl?: string;
-  private codexConfig: Record<string, unknown> = {};
+  private runtimeConfigByRole = new Map<AgentRole, ResolvedRoleRuntimeConfig>();
   private readonly agentRuntime: RoleAgentRuntime;
 
   constructor(
@@ -82,9 +89,9 @@ export class FleetService {
       path.join(runtimeDir, "agents.json"),
       SCHEMA_PATHS.agentRuntime,
     );
-    this.sessionRepository = new JsonRepository<AppServerSessionCollection>(
-      path.join(runtimeDir, "app-server-sessions.json"),
-      SCHEMA_PATHS.appServerSession,
+    this.sessionRepository = new JsonRepository<AgentSessionCollection>(
+      path.join(runtimeDir, "agent-sessions.json"),
+      SCHEMA_PATHS.agentSession,
     );
   }
 
@@ -121,7 +128,7 @@ export class FleetService {
     const config = await this.readConfigFile();
     this.threadResponseLanguage = this.resolveThreadResponseLanguage(input.lang, config);
     this.reviewerPlaywrightServerUrl = normalizePlaywrightServerUrl(input.playwrightServerUrl);
-    this.codexConfig = readCodexConfig(config);
+    this.runtimeConfigByRole = buildResolvedRuntimeConfigByRole(config);
     if (this.apiServerLifecycle) {
       try {
         await this.apiServerLifecycle.start();
@@ -142,9 +149,11 @@ export class FleetService {
     const now = new Date().toISOString();
 
     for (const target of targets) {
+      const roleRuntime = this.requireConfiguredRuntime(target.role);
       const runtimeAgent = upsertRuntime(runtime, {
         id: target.id,
         role: target.role,
+        provider: roleRuntime.provider,
         status: "starting",
         pid: null,
         cwd: process.cwd(),
@@ -154,9 +163,10 @@ export class FleetService {
 
       upsertSession(sessions, {
         agentId: target.id,
+        provider: roleRuntime.provider,
         status: "initializing",
         initialized: false,
-        lastNotificationAt: now,
+        lastActivityAt: now,
       });
 
       try {
@@ -168,8 +178,9 @@ export class FleetService {
           detached: Boolean(input.detached),
           startupPrompt,
           playwrightServerUrl: target.role === "Reviewer" ? this.reviewerPlaywrightServerUrl : undefined,
-          runtimeConfig: this.codexConfig,
+          runtimeConfig: roleRuntime.config,
         });
+        runtimeAgent.provider = prepared.provider;
         runtimeAgent.pid = prepared.pid;
         runtimeAgent.startedAt = prepared.startedAt;
         runtimeAgent.status = "running";
@@ -178,11 +189,12 @@ export class FleetService {
 
         const session = upsertSession(sessions, {
           agentId: target.id,
+          provider: prepared.provider,
           status: "ready",
           initialized: true,
-          threadId: prepared.session.threadId,
-          activeTurnId: prepared.session.activeTurnId,
-          lastNotificationAt: prepared.session.lastActivityAt,
+          conversationId: prepared.session.conversationId,
+          activeInvocationId: prepared.session.activeInvocationId,
+          lastActivityAt: prepared.session.lastActivityAt,
         });
         session.lastError = undefined;
       } catch (error) {
@@ -192,9 +204,10 @@ export class FleetService {
 
         const session = upsertSession(sessions, {
           agentId: target.id,
+          provider: roleRuntime.provider,
           status: "error",
           initialized: false,
-          lastNotificationAt: new Date().toISOString(),
+          lastActivityAt: new Date().toISOString(),
         });
         session.lastError = runtimeAgent.lastError;
       }
@@ -219,10 +232,12 @@ export class FleetService {
       // shutdown signal must target the process that was previously started.
       const runningRuntime = runtime.agents.find((agent) => agent.id === target.id);
       const pidToStop = runningRuntime?.pid ?? null;
+      const roleRuntime = this.requireConfiguredRuntime(target.role);
 
       const runtimeAgent = upsertRuntime(runtime, {
         id: target.id,
         role: target.role,
+        provider: runningRuntime?.provider ?? roleRuntime.provider,
         status: "stopped",
         pid: pidToStop,
         cwd: runningRuntime?.cwd ?? process.cwd(),
@@ -240,11 +255,12 @@ export class FleetService {
 
       upsertSession(sessions, {
         agentId: target.id,
+        provider: runningRuntime?.provider ?? roleRuntime.provider,
         status: "disconnected",
         initialized: false,
-        threadId: null,
-        activeTurnId: null,
-        lastNotificationAt: new Date().toISOString(),
+        conversationId: null,
+        activeInvocationId: null,
+        lastActivityAt: new Date().toISOString(),
       });
     }
 
@@ -307,13 +323,15 @@ export class FleetService {
       await this.executeRoleHooks(input.agentRole, "before_start", hookContext);
 
       const sessions = await this.getOrInitializeSessions();
+      const roleRuntime = this.requireConfiguredRuntime(input.agentRole);
       const session = upsertSession(sessions, {
         agentId: input.agentId,
+        provider: roleRuntime.provider,
         status: "ready",
         initialized: true,
-        threadId: null,
-        activeTurnId: null,
-        lastNotificationAt: new Date().toISOString(),
+        conversationId: null,
+        activeInvocationId: null,
+        lastActivityAt: new Date().toISOString(),
       });
 
       const prompt = await this.buildEventPrompt(input.agentRole, input.event);
@@ -323,14 +341,15 @@ export class FleetService {
         cwd: process.cwd(),
         prompt,
         responseLanguage: this.threadResponseLanguage,
-        runtimeConfig: this.codexConfig,
+        runtimeConfig: roleRuntime.config,
       });
 
+      session.provider = execution.provider;
       session.status = "ready";
       session.initialized = true;
-      session.threadId = execution.session.threadId;
-      session.activeTurnId = execution.session.activeTurnId;
-      session.lastNotificationAt = execution.session.lastActivityAt;
+      session.conversationId = execution.session.conversationId;
+      session.activeInvocationId = execution.session.activeInvocationId;
+      session.lastActivityAt = execution.session.lastActivityAt;
       session.lastError = undefined;
       sessions.updatedAt = new Date().toISOString();
       await this.sessionRepository.save(sessions);
@@ -367,25 +386,88 @@ export class FleetService {
         await this.runtimeRepository.save(initial);
         return initial;
       }
+      if (error instanceof CodefleetError && error.code === "ERR_VALIDATION") {
+        const migrated = await this.tryMigrateLegacyRuntimeCollection();
+        if (migrated) {
+          return migrated;
+        }
+      }
 
       throw error;
     }
   }
 
-  private async getOrInitializeSessions(): Promise<AppServerSessionCollection> {
+  private async getOrInitializeSessions(): Promise<AgentSessionCollection> {
     try {
       return await this.sessionRepository.get();
     } catch (error) {
       if (error instanceof CodefleetError && error.code === "ERR_NOT_FOUND") {
+        const migrated = await this.tryMigrateLegacySessionCollection();
+        if (migrated) {
+          return migrated;
+        }
         await fs.mkdir(this.runtimeDir, { recursive: true });
         const now = new Date().toISOString();
-        const initial: AppServerSessionCollection = { version: 1, updatedAt: now, sessions: [] };
+        const initial: AgentSessionCollection = { version: 1, updatedAt: now, sessions: [] };
         await this.sessionRepository.save(initial);
         return initial;
       }
 
       throw error;
     }
+  }
+
+  private requireConfiguredRuntime(role: AgentRole): ResolvedRoleRuntimeConfig {
+    const resolved = this.runtimeConfigByRole.get(role) ?? resolveRoleRuntimeConfig(null, role);
+    if (resolved.provider !== this.agentRuntime.provider) {
+      throw new CodefleetError(
+        "ERR_VALIDATION",
+        `configured runtime provider ${resolved.provider} is not available for role=${role}`,
+      );
+    }
+    return resolved;
+  }
+
+  private async tryMigrateLegacyRuntimeCollection(): Promise<AgentRuntimeCollection | null> {
+    const filePath = path.join(this.runtimeDir, "agents.json");
+    const raw = await safeRead(filePath);
+    if (!raw.trim()) {
+      return null;
+    }
+    const parsed = parseJsonObject(raw, filePath);
+    const candidate = parsed.agents;
+    if (!Array.isArray(candidate)) {
+      return null;
+    }
+
+    const migrated: AgentRuntimeCollection = {
+      version: typeof parsed.version === "number" ? parsed.version : 1,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+      agents: candidate.map((entry) => migrateLegacyRuntimeAgent(entry)),
+    };
+    await this.runtimeRepository.save(migrated);
+    return migrated;
+  }
+
+  private async tryMigrateLegacySessionCollection(): Promise<AgentSessionCollection | null> {
+    const legacyPath = path.join(this.runtimeDir, LEGACY_APP_SERVER_SESSION_FILE);
+    const raw = await safeRead(legacyPath);
+    if (!raw.trim()) {
+      return null;
+    }
+    const parsed = parseJsonObject(raw, legacyPath);
+    const candidate = parsed.sessions;
+    if (!Array.isArray(candidate)) {
+      return null;
+    }
+
+    const migrated: AgentSessionCollection = {
+      version: typeof parsed.version === "number" ? parsed.version : 1,
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
+      sessions: candidate.map((entry) => migrateLegacySession(entry)),
+    };
+    await this.sessionRepository.save(migrated);
+    return migrated;
   }
 
   private async buildEventPrompt(agentRole: AgentRole, event: SystemEvent): Promise<string> {
@@ -513,16 +595,6 @@ export class FleetService {
     // a temporary workspace in tests without changing process.cwd().
     return path.join(path.dirname(this.rolesPath), CONFIG_FILE_NAME);
   }
-}
-
-function readCodexConfig(config: Record<string, unknown> | null): Record<string, unknown> {
-  if (!config || !("codex" in config) || config.codex === undefined) {
-    return {};
-  }
-  if (!isRecord(config.codex)) {
-    throw new CodefleetError("ERR_VALIDATION", "config.codex must be a JSON object");
-  }
-  return config.codex;
 }
 
 function parseRoleHooksByAgentRole(value: unknown): RoleHooksByAgentRole {
@@ -719,7 +791,7 @@ function validateRoleCount(label: string, value: number): void {
 
 function summarizeStatus(
   agents: AgentRuntime[],
-  sessions: AppServerSession[],
+  sessions: AgentSession[],
   apiServer?: FleetApiServerStatus,
 ): "running" | "stopped" | "degraded" {
   if (agents.length === 0) {
@@ -759,7 +831,7 @@ function upsertRuntime(collection: AgentRuntimeCollection, input: AgentRuntime):
   return input;
 }
 
-function upsertSession(collection: AppServerSessionCollection, input: AppServerSession): AppServerSession {
+function upsertSession(collection: AgentSessionCollection, input: AgentSession): AgentSession {
   const existing = collection.sessions.find((session) => session.agentId === input.agentId);
   if (existing) {
     Object.assign(existing, input);
@@ -781,4 +853,168 @@ async function safeRead(filePath: string): Promise<string> {
 
     throw error;
   }
+}
+
+function buildResolvedRuntimeConfigByRole(config: Record<string, unknown> | null): Map<AgentRole, ResolvedRoleRuntimeConfig> {
+  return new Map(
+    (["Orchestrator", "Curator", "Developer", "Polisher", "Gatekeeper", "Reviewer"] as const).map((role) => [
+      role,
+      resolveRoleRuntimeConfig(config, role),
+    ]),
+  );
+}
+
+function resolveRoleRuntimeConfig(
+  config: Record<string, unknown> | null,
+  role: AgentRole,
+): ResolvedRoleRuntimeConfig {
+  const agentRuntime = isRecord(config?.agentRuntime) ? config.agentRuntime : null;
+  const rolesConfig = isRecord(agentRuntime?.roles) ? agentRuntime.roles : null;
+  const roleConfig = rolesConfig && isRecord(rolesConfig[role]) ? rolesConfig[role] : null;
+  if (roleConfig) {
+    return parseConfiguredRuntime(roleConfig, `config.agentRuntime.roles.${role}`);
+  }
+
+  const defaultConfig = agentRuntime && isRecord(agentRuntime.default) ? agentRuntime.default : null;
+  if (defaultConfig) {
+    return parseConfiguredRuntime(defaultConfig, "config.agentRuntime.default");
+  }
+
+  if (config && "codex" in config && config.codex !== undefined) {
+    if (!isRecord(config.codex)) {
+      throw new CodefleetError("ERR_VALIDATION", "config.codex must be a JSON object");
+    }
+    return {
+      provider: "codex-app-server",
+      config: config.codex,
+    };
+  }
+
+  return {
+    provider: "codex-app-server",
+    config: {},
+  };
+}
+
+function parseConfiguredRuntime(value: Record<string, unknown>, label: string): ResolvedRoleRuntimeConfig {
+  const provider = value.provider;
+  if (!isSupportedAgentProvider(provider)) {
+    throw new CodefleetError(
+      "ERR_VALIDATION",
+      `${label}.provider must be one of ${SUPPORTED_AGENT_PROVIDERS.join(", ")}`,
+    );
+  }
+  const runtimeConfig = value.config;
+  if (runtimeConfig !== undefined && !isRecord(runtimeConfig)) {
+    throw new CodefleetError("ERR_VALIDATION", `${label}.config must be a JSON object`);
+  }
+  return {
+    provider,
+    config: runtimeConfig ?? {},
+  };
+}
+
+function isSupportedAgentProvider(value: unknown): value is AgentProviderId | "claude-agent-sdk" {
+  return typeof value === "string" && SUPPORTED_AGENT_PROVIDERS.includes(value as (typeof SUPPORTED_AGENT_PROVIDERS)[number]);
+}
+
+function parseJsonObject(raw: string, filePath: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) {
+      throw new CodefleetError("ERR_VALIDATION", `file is not a JSON object: ${filePath}`);
+    }
+    return parsed;
+  } catch (error) {
+    if (error instanceof CodefleetError) {
+      throw error;
+    }
+    throw new CodefleetError("ERR_VALIDATION", `file is not valid JSON: ${filePath}`, error);
+  }
+}
+
+function migrateLegacyRuntimeAgent(entry: unknown): AgentRuntime {
+  if (!isRecord(entry)) {
+    throw new CodefleetError("ERR_VALIDATION", "legacy runtime agent entry must be an object");
+  }
+  const runtime = entry as Partial<AgentRuntime> & { provider?: unknown };
+  return {
+    id: expectNonEmptyString(runtime.id, "legacy runtime agent.id"),
+    role: expectAgentRole(runtime.role, "legacy runtime agent.role"),
+    provider: isSupportedAgentProvider(runtime.provider) ? runtime.provider : "codex-app-server",
+    status: expectRuntimeStatus(runtime.status, "legacy runtime agent.status"),
+    pid: typeof runtime.pid === "number" || runtime.pid === null ? runtime.pid : null,
+    cwd: expectNonEmptyString(runtime.cwd, "legacy runtime agent.cwd"),
+    startedAt: expectNonEmptyString(runtime.startedAt, "legacy runtime agent.startedAt"),
+    lastHeartbeatAt: expectNonEmptyString(runtime.lastHeartbeatAt, "legacy runtime agent.lastHeartbeatAt"),
+    ...(typeof runtime.lastError === "string" && runtime.lastError.length > 0 ? { lastError: runtime.lastError } : {}),
+  };
+}
+
+function migrateLegacySession(entry: unknown): AgentSession {
+  if (!isRecord(entry)) {
+    throw new CodefleetError("ERR_VALIDATION", "legacy runtime session entry must be an object");
+  }
+  const session = entry as Record<string, unknown>;
+  return {
+    agentId: expectNonEmptyString(session.agentId, "legacy runtime session.agentId"),
+    provider: isSupportedAgentProvider(session.provider) ? session.provider : "codex-app-server",
+    status: expectSessionStatus(session.status, "legacy runtime session.status"),
+    initialized: typeof session.initialized === "boolean" ? session.initialized : false,
+    conversationId: readNullableString(session.conversationId) ?? readNullableString(session.threadId),
+    activeInvocationId: readNullableString(session.activeInvocationId) ?? readNullableString(session.activeTurnId),
+    lastActivityAt:
+      readRequiredString(session.lastActivityAt, "legacy runtime session.lastActivityAt") ??
+      expectNonEmptyString(session.lastNotificationAt, "legacy runtime session.lastNotificationAt"),
+    ...(typeof session.lastError === "string" && session.lastError.length > 0 ? { lastError: session.lastError } : {}),
+  };
+}
+
+function readRequiredString(value: unknown, _label: string): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readNullableString(value: unknown): string | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function expectNonEmptyString(value: unknown, label: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new CodefleetError("ERR_VALIDATION", `${label} must be a non-empty string`);
+  }
+  return value;
+}
+
+function expectAgentRole(value: unknown, label: string): AgentRole {
+  if (
+    value !== "Orchestrator" &&
+    value !== "Curator" &&
+    value !== "Developer" &&
+    value !== "Polisher" &&
+    value !== "Gatekeeper" &&
+    value !== "Reviewer"
+  ) {
+    throw new CodefleetError("ERR_VALIDATION", `${label} must be a valid agent role`);
+  }
+  return value;
+}
+
+function expectRuntimeStatus(value: unknown, label: string): AgentRuntime["status"] {
+  if (value !== "starting" && value !== "running" && value !== "stopped" && value !== "failed") {
+    throw new CodefleetError("ERR_VALIDATION", `${label} must be a valid runtime status`);
+  }
+  return value;
+}
+
+function expectSessionStatus(value: unknown, label: string): AgentSession["status"] {
+  if (value !== "disconnected" && value !== "initializing" && value !== "ready" && value !== "error") {
+    throw new CodefleetError("ERR_VALIDATION", `${label} must be a valid session status`);
+  }
+  return value;
 }

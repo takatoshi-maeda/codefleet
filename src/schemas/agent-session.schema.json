@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "codefleet/runtime/app-server-sessions.json",
+  "$id": "codefleet/runtime/agent-sessions.json",
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "updatedAt", "sessions"],
@@ -12,24 +12,25 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["agentId", "status", "initialized", "lastNotificationAt"],
+        "required": ["agentId", "provider", "status", "initialized", "lastActivityAt"],
         "properties": {
           "agentId": { "type": "string", "minLength": 1 },
+          "provider": { "type": "string", "enum": ["codex-app-server", "claude-agent-sdk"] },
           "status": { "type": "string", "enum": ["disconnected", "initializing", "ready", "error"] },
           "initialized": { "type": "boolean" },
-          "threadId": {
+          "conversationId": {
             "anyOf": [
               { "type": "string", "minLength": 1 },
               { "type": "null" }
             ]
           },
-          "activeTurnId": {
+          "activeInvocationId": {
             "anyOf": [
               { "type": "string", "minLength": 1 },
               { "type": "null" }
             ]
           },
-          "lastNotificationAt": { "type": "string", "format": "date-time" },
+          "lastActivityAt": { "type": "string", "format": "date-time" },
           "lastError": { "type": "string", "minLength": 1 }
         }
       }

@@ -4,5 +4,5 @@ export const SCHEMA_PATHS = {
   backlogItems: "src/schemas/backlog-items.schema.json",
   roles: "src/schemas/roles.schema.json",
   agentRuntime: "src/schemas/agent-runtime.schema.json",
-  appServerSession: "src/schemas/app-server-session.schema.json",
+  agentSession: "src/schemas/agent-session.schema.json",
 } as const;

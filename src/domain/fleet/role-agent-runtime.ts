@@ -3,8 +3,8 @@ import type { AgentRole } from "../roles-model.js";
 export type AgentProviderId = "codex-app-server";
 
 export interface RoleAgentRuntimeSessionState {
-  threadId: string | null;
-  activeTurnId: string | null;
+  conversationId: string | null;
+  activeInvocationId: string | null;
   lastActivityAt: string;
 }
 

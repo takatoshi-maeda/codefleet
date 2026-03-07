@@ -36,6 +36,12 @@ export function createInitCommand(deps: InitCommandDeps = {}): Command {
     await writeConfig({
       lang,
       docsRepository,
+      agentRuntime: {
+        default: {
+          provider: "codex-app-server",
+          config: {},
+        },
+      },
       hooks: createHooksSkeleton(),
     });
     console.log(`created ${CONFIG_PATH}`);
@@ -51,6 +57,12 @@ interface EnsureDataDirIgnoredResult {
 interface CodefleetConfig {
   lang: string;
   docsRepository: string;
+  agentRuntime: {
+    default: {
+      provider: "codex-app-server";
+      config: Record<string, unknown>;
+    };
+  };
   hooks: HooksConfig;
 }
 

@@ -4,8 +4,8 @@ import net from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
+import type { AgentSession } from "../../domain/agent-session-model.js";
 import type { AgentRuntime } from "../../domain/agent-runtime-model.js";
-import type { AppServerSession } from "../../domain/app-server-session-model.js";
 import type { AgentRole } from "../../domain/roles-model.js";
 import { FleetService } from "../../domain/fleet/fleet-service.js";
 import { FleetExecutionLog } from "../../domain/fleet/fleet-execution-log.js";
@@ -945,17 +945,18 @@ function emitAgentRuntimeLog(agent: AgentRuntime, emit: (record: object) => void
   });
 }
 
-function emitSessionLog(session: AppServerSession, emit: (record: object) => void): void {
+function emitSessionLog(session: AgentSession, emit: (record: object) => void): void {
   emit({
     ts: new Date().toISOString(),
     level: session.status === "error" ? "error" : "info",
     event: "fleet.session.state",
     agentId: session.agentId,
+    provider: session.provider,
     status: session.status,
     initialized: session.initialized,
-    threadId: session.threadId ?? null,
-    activeTurnId: session.activeTurnId ?? null,
-    lastNotificationAt: session.lastNotificationAt,
+    conversationId: session.conversationId ?? null,
+    activeInvocationId: session.activeInvocationId ?? null,
+    lastActivityAt: session.lastActivityAt,
     lastError: session.lastError ?? null,
   });
 }

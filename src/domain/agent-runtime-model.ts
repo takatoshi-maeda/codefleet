@@ -1,3 +1,4 @@
+import type { AgentProviderId } from "./fleet/role-agent-runtime.js";
 import type { AgentRole } from "./roles-model.js";
 
 export type AgentRuntimeStatus = "starting" | "running" | "stopped" | "failed";
@@ -5,6 +6,7 @@ export type AgentRuntimeStatus = "starting" | "running" | "stopped" | "failed";
 export interface AgentRuntime {
   id: string;
   role: AgentRole;
+  provider: AgentProviderId | "claude-agent-sdk";
   status: AgentRuntimeStatus;
   pid: number | null;
   cwd: string;

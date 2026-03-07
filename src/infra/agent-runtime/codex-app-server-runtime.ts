@@ -29,8 +29,8 @@ export class CodexAppServerRuntime implements RoleAgentRuntime {
       pid: started.pid,
       startedAt: started.startedAt,
       session: {
-        threadId: handshake.threadId ?? null,
-        activeTurnId: handshake.activeTurnId ?? null,
+        conversationId: handshake.threadId ?? null,
+        activeInvocationId: handshake.activeTurnId ?? null,
         lastActivityAt: handshake.lastNotificationAt,
       },
     };
@@ -52,8 +52,8 @@ export class CodexAppServerRuntime implements RoleAgentRuntime {
     return {
       provider: this.provider,
       session: {
-        threadId: startedThread.threadId,
-        activeTurnId: startedTurn.turnId,
+        conversationId: startedThread.threadId,
+        activeInvocationId: startedTurn.turnId,
         lastActivityAt: startedTurn.lastNotificationAt,
       },
     };
