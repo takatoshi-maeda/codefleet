@@ -4,6 +4,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import { CodefleetError } from "../../shared/errors.js";
 import type {
+  AgentRuntimeEventListener,
   ExecuteRoleAgentInput,
   ExecuteRoleAgentResult,
   PrepareRoleAgentInput,
@@ -19,7 +20,10 @@ export class ClaudeAgentSdkRuntime implements RoleAgentRuntime {
   readonly provider = "claude-agent-sdk" as const;
   private readonly inFlightQueries = new Map<string, { close(): void }>();
 
-  constructor(private readonly client: ClaudeAgentSdkClient = new DefaultClaudeAgentSdkClient()) {}
+  constructor(
+    private readonly client: ClaudeAgentSdkClient = new DefaultClaudeAgentSdkClient(),
+    private readonly onEvent?: AgentRuntimeEventListener,
+  ) {}
 
   async prepareAgent(input: PrepareRoleAgentInput): Promise<PrepareRoleAgentResult> {
     const now = new Date().toISOString();
@@ -53,6 +57,7 @@ export class ClaudeAgentSdkRuntime implements RoleAgentRuntime {
         lastActivityAt = new Date().toISOString();
         conversationId = message.session_id;
         activeInvocationId = readInvocationId(message, activeInvocationId);
+        this.onEvent?.(mapClaudeMessageToRuntimeEvent(input.agentId, message, conversationId, activeInvocationId));
       }
     } finally {
       this.inFlightQueries.delete(input.agentId);
@@ -184,6 +189,148 @@ function readInvocationId(message: ClaudeAgentSdkMessage, fallback: string | nul
     return message.uuid;
   }
   return fallback;
+}
+
+function mapClaudeMessageToRuntimeEvent(
+  agentId: string,
+  message: ClaudeAgentSdkMessage,
+  conversationId: string | null,
+  activeInvocationId: string | null,
+) {
+  if (message.type === "assistant") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "assistant_message" as const,
+      message: readClaudeAssistantText(message),
+      nativeType: "assistant",
+      conversationId,
+      activeInvocationId,
+      payload: { type: message.type },
+    };
+  }
+
+  if (message.type === "tool_progress") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "tool_started" as const,
+      message: `tool start: ${message.tool_name}`,
+      nativeType: "tool_progress",
+      conversationId,
+      activeInvocationId,
+      payload: {
+        tool_use_id: message.tool_use_id,
+        tool_name: message.tool_name,
+        elapsed_time_seconds: message.elapsed_time_seconds,
+      },
+    };
+  }
+
+  if (message.type === "system" && message.subtype === "init") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "conversation_started" as const,
+      message: conversationId ? `conversation started: ${conversationId}` : "conversation started",
+      nativeType: "system/init",
+      conversationId,
+      activeInvocationId,
+      payload: {
+        model: message.model,
+        permissionMode: message.permissionMode,
+      },
+    };
+  }
+
+  if (message.type === "system" && message.subtype === "task_started") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "invocation_started" as const,
+      message: message.description ? `invocation started: ${message.description}` : "invocation started",
+      nativeType: "system/task_started",
+      conversationId,
+      activeInvocationId,
+      payload: {
+        task_id: message.task_id,
+        description: message.description,
+      },
+    };
+  }
+
+  if (message.type === "system" && message.subtype === "task_notification") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "tool_finished" as const,
+      message: `tool end: ${message.summary} status=${message.status}`,
+      nativeType: "system/task_notification",
+      conversationId,
+      activeInvocationId,
+      payload: {
+        task_id: message.task_id,
+        status: message.status,
+        summary: message.summary,
+      },
+    };
+  }
+
+  if (message.type === "result") {
+    return {
+      agentId,
+      provider: "claude-agent-sdk" as const,
+      occurredAt: new Date().toISOString(),
+      kind: "invocation_finished" as const,
+      message:
+        message.subtype === "success"
+          ? "invocation finished"
+          : `invocation finished with error: ${message.subtype}`,
+      nativeType: `result/${message.subtype}`,
+      conversationId,
+      activeInvocationId,
+      payload: {
+        subtype: message.subtype,
+        stop_reason: message.stop_reason,
+      },
+    };
+  }
+
+  return {
+    agentId,
+    provider: "claude-agent-sdk" as const,
+    occurredAt: new Date().toISOString(),
+    kind: "native" as const,
+    nativeType:
+      message.type === "system" && "subtype" in message
+        ? `${message.type}/${String(message.subtype)}`
+        : message.type,
+    conversationId,
+    activeInvocationId,
+    payload: { type: message.type },
+  };
+}
+
+function readClaudeAssistantText(message: Extract<ClaudeAgentSdkMessage, { type: "assistant" }>): string | undefined {
+  const content = message.message?.content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+  const text = content
+    .map((part) => {
+      if (typeof part === "object" && part !== null && "text" in part && typeof part.text === "string") {
+        return part.text;
+      }
+      return undefined;
+    })
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join("\n");
+  return text.length > 0 ? `assistant: ${text}` : undefined;
 }
 
 function isSupportedPermissionMode(value: unknown): value is NonNullable<ClaudeAgentSdkOptions["permissionMode"]> {

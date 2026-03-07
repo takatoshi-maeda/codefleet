@@ -1,24 +1,39 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatAgentEventConsoleLog,
-  formatAgentEventHumanLog,
-  formatAgentEventNotificationLog,
-  shouldSuppressNotificationMethod,
+  formatAgentRuntimeConsoleLog,
+  formatAgentRuntimeEventLog,
+  formatAgentRuntimeHumanLog,
+  shouldSuppressAgentRuntimeEvent,
 } from "../src/cli/logging/fleet-agent-event-log.js";
+import type { AgentRuntimeEvent } from "../src/domain/fleet/role-agent-runtime.js";
+
+function codexNativeEvent(nativeType: string, payload?: Record<string, unknown>): AgentRuntimeEvent {
+  return {
+    agentId: "developer-1",
+    provider: "codex-app-server",
+    occurredAt: "2026-03-05T10:00:00.000Z",
+    kind: "native",
+    nativeType,
+    payload,
+  };
+}
 
 describe("fleet agent event log formatting", () => {
-  it("suppresses high-volume delta and duplicate notification methods", () => {
-    expect(shouldSuppressNotificationMethod("item/agentMessage/delta")).toBe(true);
-    expect(shouldSuppressNotificationMethod("codex/event/agent_message_delta")).toBe(true);
-    expect(shouldSuppressNotificationMethod("turn/started")).toBe(false);
+  it("suppresses high-volume native event types", () => {
+    expect(
+      shouldSuppressAgentRuntimeEvent(
+        codexNativeEvent("item/agentMessage/delta", {
+          delta: "partial",
+        }),
+      ),
+    ).toBe(true);
+    expect(shouldSuppressAgentRuntimeEvent(codexNativeEvent("codex/event/agent_message_delta"))).toBe(true);
+    expect(shouldSuppressAgentRuntimeEvent(codexNativeEvent("turn/started"))).toBe(false);
   });
 
-  it("summarizes approval request notifications with compact command details", () => {
-    const record = formatAgentEventNotificationLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/exec_approval_request",
-      receivedAt: "2026-02-12T07:21:50.566Z",
-      params: {
+  it("summarizes approval request events with compact command details", () => {
+    const record = formatAgentRuntimeEventLog(
+      codexNativeEvent("codex/event/exec_approval_request", {
         msg: {
           command: [
             "/bin/zsh",
@@ -28,11 +43,11 @@ describe("fleet agent event log formatting", () => {
           cwd: "/tmp/sandbox/todoapp",
           reason: "Do you want to allow writing acceptance test definitions to the local Codefleet data store for this task?",
         },
-      },
-    });
+      }),
+    );
 
-    expect(record.summary).toContain("approval requested");
-    expect(record.params).toEqual({
+    expect(record.summary).toContain("codex/event/exec_approval_request");
+    expect(record.payload).toEqual({
       command: ["/bin/zsh", "-lc", "codefleet-acceptance-test add --title \"Auth: Sign up with email/password\""],
       cwd: "/tmp/sandbox/todoapp",
       reason: "Do you want to allow writing acceptance test definitions to the local Codefleet data store for this task?",
@@ -41,20 +56,17 @@ describe("fleet agent event log formatting", () => {
 
   it("truncates oversized payload fields so each line remains readable", () => {
     const longText = "x".repeat(600);
-    const record = formatAgentEventNotificationLog({
-      agentId: "gatekeeper-1",
-      method: "thread/started",
-      receivedAt: "2026-02-12T07:21:13.892Z",
-      params: {
+    const record = formatAgentRuntimeEventLog(
+      codexNativeEvent("thread/started", {
         thread: {
           id: "019c50b9-b581-72c3-8cdc-1a171e860020",
           preview: longText,
         },
-      },
-    });
+      }),
+    );
 
-    expect(record.summary).toBe("thread started: 019c50b9-b581-72c3-8cdc-1a171e860020");
-    expect(record.params).toEqual({
+    expect(record.summary).toBe("conversation started: 019c50b9-b581-72c3-8cdc-1a171e860020");
+    expect(record.payload).toEqual({
       thread: {
         id: "019c50b9-b581-72c3-8cdc-1a171e860020",
         preview: expect.stringContaining("[truncated "),
@@ -62,99 +74,46 @@ describe("fleet agent event log formatting", () => {
     });
   });
 
-  it("emits human-readable assistant output only when the part is completed", () => {
-    const deltaLog = formatAgentEventHumanLog({
-      agentId: "developer-1",
-      method: "item/agentMessage/delta",
-      receivedAt: "2026-02-12T07:21:44.084Z",
-      params: { delta: "hello" },
-    });
-    expect(deltaLog).toBeNull();
-
-    const completedLog = formatAgentEventHumanLog({
-      agentId: "developer-1",
-      method: "item/completed",
-      receivedAt: "2026-02-12T07:21:50.124Z",
-      params: {
-        item: {
-          type: "agentMessage",
-          id: "msg-1",
-          text: "line1\nline2",
-        },
-      },
-    });
-
-    expect(completedLog).toEqual({
-      ts: "2026-02-12T07:21:50.124Z",
-      level: "info",
-      agentId: "developer-1",
-      message: "assistant: line1\nline2",
-    });
-  });
-
-  it("emits human-readable assistant output from codex/event/agent_message", () => {
-    const record = formatAgentEventHumanLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/agent_message",
-      receivedAt: "2026-02-12T08:11:41.934Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "agent_message",
-          message: "これは最終メッセージです。",
-        },
-      },
-    });
-
-    expect(record).toEqual({
-      ts: "2026-02-12T08:11:41.934Z",
+  it("emits human-readable logs for assistant, reasoning, and tool events", () => {
+    expect(
+      formatAgentRuntimeHumanLog({
+        agentId: "gatekeeper-1",
+        provider: "codex-app-server",
+        occurredAt: "2026-02-12T08:16:42.046Z",
+        kind: "tool_started",
+        message: "tool start: /bin/zsh -lc pwd && ls -la (cwd: /tmp/sandbox/todoapp)",
+      }),
+    ).toEqual({
+      ts: "2026-02-12T08:16:42.046Z",
       level: "info",
       agentId: "gatekeeper-1",
-      message: "assistant: これは最終メッセージです。",
-    });
-  });
-
-  it("emits human-readable assistant output from codex/event/item_completed payload content", () => {
-    const record = formatAgentEventHumanLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/item_completed",
-      receivedAt: "2026-02-12T08:17:18.746Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "item_completed",
-          item: {
-            type: "AgentMessage",
-            id: "msg-1",
-            content: [{ type: "Text", text: "中間報告です。" }],
-          },
-        },
-      },
+      message: "tool start: /bin/zsh -lc pwd && ls -la (cwd: /tmp/sandbox/todoapp)",
     });
 
-    expect(record).toEqual({
+    expect(
+      formatAgentRuntimeHumanLog({
+        agentId: "gatekeeper-1",
+        provider: "codex-app-server",
+        occurredAt: "2026-02-12T08:17:18.746Z",
+        kind: "assistant_message",
+        message: "assistant: 中間報告です。",
+      }),
+    ).toEqual({
       ts: "2026-02-12T08:17:18.746Z",
       level: "info",
       agentId: "gatekeeper-1",
       message: "assistant: 中間報告です。",
     });
-  });
 
-  it("emits human-readable reasoning updates from codex/event/agent_reasoning", () => {
-    const record = formatAgentEventHumanLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/agent_reasoning",
-      receivedAt: "2026-02-12T08:16:41.895Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "agent_reasoning",
-          text: "**Preparing repo inspection commands**",
-        },
-      },
-    });
-
-    expect(record).toEqual({
+    expect(
+      formatAgentRuntimeHumanLog({
+        agentId: "gatekeeper-1",
+        provider: "codex-app-server",
+        occurredAt: "2026-02-12T08:16:41.895Z",
+        kind: "reasoning",
+        message: "reasoning: **Preparing repo inspection commands**",
+      }),
+    ).toEqual({
       ts: "2026-02-12T08:16:41.895Z",
       level: "info",
       agentId: "gatekeeper-1",
@@ -162,161 +121,77 @@ describe("fleet agent event log formatting", () => {
     });
   });
 
-  it("emits reasoning text from codex/event/item_completed when item type is Reasoning", () => {
-    const record = formatAgentEventConsoleLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/item_completed",
-      receivedAt: "2026-03-05T06:42:01.401Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "item_completed",
-          item: {
-            type: "Reasoning",
-            id: "reason-1",
-            content: [{ type: "Text", text: "**Planning page inspection**" }],
-          },
-        },
-      },
-    });
-
-    expect(record).toEqual({
-      ts: "2026-03-05T06:42:01.401Z",
-      level: "info",
-      event: "fleet.agent.output",
-      agentId: "gatekeeper-1",
-      message: "reasoning: **Planning page inspection**",
-    });
-  });
-
-  it("emits tool execution start/end logs from codex exec events", () => {
-    const begin = formatAgentEventHumanLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/exec_command_begin",
-      receivedAt: "2026-02-12T08:16:42.046Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "exec_command_begin",
-          command: ["/bin/zsh", "-lc", "pwd && ls -la"],
-          cwd: "/tmp/sandbox/todoapp",
-        },
-      },
-    });
-
-    expect(begin).toEqual({
-      ts: "2026-02-12T08:16:42.046Z",
-      level: "info",
-      agentId: "gatekeeper-1",
-      message: "tool start: /bin/zsh -lc pwd && ls -la (cwd: /tmp/sandbox/todoapp)",
-    });
-
-    const end = formatAgentEventHumanLog({
-      agentId: "gatekeeper-1",
-      method: "codex/event/exec_command_end",
-      receivedAt: "2026-02-12T08:16:42.097Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "exec_command_end",
-          command: ["/bin/zsh", "-lc", "pwd && ls -la"],
-          exit_code: 0,
-          stderr: "",
-        },
-      },
-    });
-
-    expect(end).toEqual({
-      ts: "2026-02-12T08:16:42.097Z",
-      level: "info",
-      agentId: "gatekeeper-1",
-      message: "tool end: /bin/zsh -lc pwd && ls -la exit=0",
-    });
-  });
-
-  it("does not emit non-target console logs such as summarized events", () => {
-    const record = formatAgentEventConsoleLog({
-      agentId: "developer-1",
-      method: "codex/event/task_started",
-      receivedAt: "2026-03-05T10:00:00.000Z",
-      params: {
-        id: "0",
-        msg: {
-          type: "task_started",
-        },
-      },
-    });
-
-    expect(record).toBeNull();
-  });
-
-  it("does not emit non-target console logs for suppressed methods", () => {
-    const record = formatAgentEventConsoleLog({
-      agentId: "developer-1",
-      method: "item/agentMessage/delta",
-      receivedAt: "2026-03-05T10:00:00.000Z",
-      params: {
-        delta: "partial",
-      },
-    });
-
-    expect(record).toBeNull();
-  });
-
-  it("suppresses item started summary logs for Reasoning lifecycle events", () => {
-    const started = formatAgentEventConsoleLog({
-      agentId: "developer-1",
-      method: "codex/event/item_started",
-      receivedAt: "2026-03-05T10:00:00.000Z",
-      params: {
-        msg: {
-          type: "item_started",
-          item: { type: "Reasoning" },
-        },
-      },
-    });
-    expect(started).toBeNull();
-  });
-
-  it("emits reasoning placeholder when Reasoning item_completed has no text", () => {
-    const completedWithoutText = formatAgentEventConsoleLog({
-      agentId: "developer-1",
-      method: "codex/event/item_completed",
-      receivedAt: "2026-03-05T10:00:01.000Z",
-      params: {
-        msg: {
-          type: "item_completed",
-          item: { type: "Reasoning", content: [] },
-        },
-      },
-    });
-    expect(completedWithoutText).toEqual({
+  it("emits console logs only for allowed human-readable messages", () => {
+    expect(
+      formatAgentRuntimeConsoleLog({
+        agentId: "developer-1",
+        provider: "codex-app-server",
+        occurredAt: "2026-03-05T10:00:01.000Z",
+        kind: "reasoning",
+        message: "reasoning: <empty>",
+      }),
+    ).toEqual({
       ts: "2026-03-05T10:00:01.000Z",
       level: "info",
       event: "fleet.agent.output",
       agentId: "developer-1",
       message: "reasoning: <empty>",
     });
-  });
 
-  it("emits assistant messages to console log stream", () => {
-    const record = formatAgentEventConsoleLog({
-      agentId: "developer-1",
-      method: "codex/event/agent_message",
-      receivedAt: "2026-03-05T10:00:02.000Z",
-      params: {
-        msg: {
-          type: "agent_message",
-          message: "final answer",
-        },
-      },
-    });
-    expect(record).toEqual({
+    expect(
+      formatAgentRuntimeConsoleLog({
+        agentId: "developer-1",
+        provider: "codex-app-server",
+        occurredAt: "2026-03-05T10:00:02.000Z",
+        kind: "assistant_message",
+        message: "assistant: final answer",
+      }),
+    ).toEqual({
       ts: "2026-03-05T10:00:02.000Z",
       level: "info",
       event: "fleet.agent.output",
       agentId: "developer-1",
       message: "assistant: final answer",
+    });
+
+    expect(formatAgentRuntimeConsoleLog(codexNativeEvent("codex/event/task_started", { msg: { type: "task_started" } }))).toBeNull();
+  });
+
+  it("supports provider-common logs for Claude events", () => {
+    const consoleLog = formatAgentRuntimeConsoleLog({
+      agentId: "orchestrator-1",
+      provider: "claude-agent-sdk",
+      occurredAt: "2026-03-06T00:00:00.000Z",
+      kind: "assistant_message",
+      message: "assistant: Claude response",
+      nativeType: "assistant",
+    });
+
+    expect(consoleLog).toEqual({
+      ts: "2026-03-06T00:00:00.000Z",
+      level: "info",
+      event: "fleet.agent.output",
+      agentId: "orchestrator-1",
+      message: "assistant: Claude response",
+    });
+
+    const eventLog = formatAgentRuntimeEventLog({
+      agentId: "orchestrator-1",
+      provider: "claude-agent-sdk",
+      occurredAt: "2026-03-06T00:00:01.000Z",
+      kind: "invocation_finished",
+      message: "invocation finished",
+      nativeType: "result/success",
+      payload: {
+        subtype: "success",
+      },
+    });
+
+    expect(eventLog).toMatchObject({
+      provider: "claude-agent-sdk",
+      kind: "invocation_finished",
+      nativeType: "result/success",
+      summary: "invocation finished",
     });
   });
 });

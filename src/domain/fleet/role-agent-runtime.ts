@@ -2,6 +2,30 @@ import type { AgentRole } from "../roles-model.js";
 
 export type AgentProviderId = "codex-app-server" | "claude-agent-sdk";
 
+export type AgentRuntimeEventKind =
+  | "assistant_message"
+  | "reasoning"
+  | "tool_started"
+  | "tool_finished"
+  | "conversation_started"
+  | "invocation_started"
+  | "invocation_finished"
+  | "native";
+
+export interface AgentRuntimeEvent {
+  agentId: string;
+  provider: AgentProviderId;
+  occurredAt: string;
+  kind: AgentRuntimeEventKind;
+  message?: string;
+  nativeType?: string;
+  conversationId?: string | null;
+  activeInvocationId?: string | null;
+  payload?: Record<string, unknown>;
+}
+
+export type AgentRuntimeEventListener = (event: AgentRuntimeEvent) => void;
+
 export interface RoleAgentRuntimeSessionState {
   conversationId: string | null;
   activeInvocationId: string | null;

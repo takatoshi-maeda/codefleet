@@ -6,6 +6,8 @@ import { createInterface } from "node:readline/promises";
 import { Command } from "commander";
 import type { AgentSession } from "../../domain/agent-session-model.js";
 import type { AgentRuntime } from "../../domain/agent-runtime-model.js";
+import { StaticAgentRuntimeResolver } from "../../domain/fleet/agent-runtime-resolver.js";
+import type { AgentProviderId, RoleAgentRuntime } from "../../domain/fleet/role-agent-runtime.js";
 import type { AgentRole } from "../../domain/roles-model.js";
 import { FleetService } from "../../domain/fleet/fleet-service.js";
 import { FleetExecutionLog } from "../../domain/fleet/fleet-execution-log.js";
@@ -13,7 +15,10 @@ import { McpApiServerLifecycle } from "../../api/mcp/fleet-api-server-lifecycle.
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { AgentEventQueueWorkerService } from "../../domain/events/agent-event-queue-worker-service.js";
-import { AppServerClient, type AppServerNotification } from "../../infra/appserver/app-server-client.js";
+import type { AgentRuntimeEvent } from "../../domain/fleet/role-agent-runtime.js";
+import { CodexAppServerRuntime } from "../../infra/agent-runtime/codex-app-server-runtime.js";
+import { ClaudeAgentSdkRuntime } from "../../infra/agent-runtime/claude-agent-sdk-runtime.js";
+import { AppServerClient } from "../../infra/appserver/app-server-client.js";
 import { BacklogPoller } from "../../events/watchers/backlog-poller.js";
 import {
   assertDocsUpdateSubmoduleIsValid,
@@ -22,10 +27,10 @@ import {
   resolveDocsUpdateSubmodulePaths,
 } from "../../events/watchers/docs-update-submodule-watcher.js";
 import {
-  diagnoseAgentEventConsoleLog,
-  formatAgentEventConsoleLog,
-  formatAgentEventNotificationLog,
-  shouldSuppressNotificationMethod,
+  diagnoseAgentRuntimeConsoleLog,
+  formatAgentRuntimeConsoleLog,
+  formatAgentRuntimeEventLog,
+  shouldSuppressAgentRuntimeEvent,
 } from "../logging/fleet-agent-event-log.js";
 import type { AgentEventQueueMessage } from "../../domain/events/agent-event-queue-message-model.js";
 import type { SystemEvent } from "../../events/router.js";
@@ -164,46 +169,46 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
   const emit = (record: object): void => emitLog(record, logMode);
   const lastAssistantMessageByAgent = new Map<string, string>();
   const suppressedEventCountByAgent = new Map<string, number>();
-  const appServerClient = new AppServerClient({
-    onNotification: (notification) => {
-      if (debugAppServerEvents) {
-        // Raw notification payloads are emitted only when explicitly requested.
-        console.error(formatAppServerNotificationDebugLine(notification));
-      }
-      if (logMode === "jsonl") {
-        if (shouldSuppressNotificationMethod(notification.method)) {
-          suppressedEventCountByAgent.set(
-            notification.agentId,
-            (suppressedEventCountByAgent.get(notification.agentId) ?? 0) + 1,
-          );
-          return;
-        }
-
-        const logRecord = formatAgentEventNotificationLog(notification);
-        const suppressedCount = suppressedEventCountByAgent.get(notification.agentId) ?? 0;
-        if (suppressedCount > 0) {
-          // Keep high-volume stream events out of the main log while preserving observability.
-          logRecord.suppressedEventsSinceLast = suppressedCount;
-          suppressedEventCountByAgent.set(notification.agentId, 0);
-        }
-        emit(logRecord);
+  const onRuntimeEvent = (event: AgentRuntimeEvent) => {
+    if (debugAppServerEvents) {
+      console.error(formatAgentRuntimeEventDebugLine(event));
+    }
+    if (logMode === "jsonl") {
+      if (shouldSuppressAgentRuntimeEvent(event)) {
+        suppressedEventCountByAgent.set(event.agentId, (suppressedEventCountByAgent.get(event.agentId) ?? 0) + 1);
         return;
       }
 
-      emitReasoningDebugLog(notification);
-      const consoleLog = formatAgentEventConsoleLog(notification);
-      if (consoleLog) {
-        if (consoleLog.event === "fleet.agent.output" && consoleLog.message.startsWith("assistant: ")) {
-          const previous = lastAssistantMessageByAgent.get(consoleLog.agentId);
-          if (previous === consoleLog.message) {
-            return;
-          }
-          lastAssistantMessageByAgent.set(consoleLog.agentId, consoleLog.message);
-        }
-        emit(consoleLog);
+      const logRecord = formatAgentRuntimeEventLog(event);
+      const suppressedCount = suppressedEventCountByAgent.get(event.agentId) ?? 0;
+      if (suppressedCount > 0) {
+        logRecord.suppressedEventsSinceLast = suppressedCount;
+        suppressedEventCountByAgent.set(event.agentId, 0);
       }
-    },
-  });
+      emit(logRecord);
+      return;
+    }
+
+    emitReasoningDebugLog(event);
+    const consoleLog = formatAgentRuntimeConsoleLog(event);
+    if (consoleLog) {
+      if (consoleLog.event === "fleet.agent.output" && consoleLog.message.startsWith("assistant: ")) {
+        const previous = lastAssistantMessageByAgent.get(consoleLog.agentId);
+        if (previous === consoleLog.message) {
+          return;
+        }
+        lastAssistantMessageByAgent.set(consoleLog.agentId, consoleLog.message);
+      }
+      emit(consoleLog);
+    }
+  };
+  const appServerClient = new AppServerClient();
+  const agentRuntimeResolver = new StaticAgentRuntimeResolver(
+    new Map<AgentProviderId, RoleAgentRuntime>([
+      ["codex-app-server", new CodexAppServerRuntime(appServerClient, onRuntimeEvent)],
+      ["claude-agent-sdk", new ClaudeAgentSdkRuntime(undefined, onRuntimeEvent)],
+    ]),
+  );
   const service = new FleetService(
     undefined,
     undefined,
@@ -213,6 +218,7 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     undefined,
     undefined,
     new McpApiServerLifecycle(),
+    agentRuntimeResolver,
   );
   const commandName = options.commandName ?? "fleetctl";
 
@@ -511,51 +517,49 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
   return cmd;
 }
 
-function emitReasoningDebugLog(notification: { agentId: string; method: string; params?: Record<string, unknown> }): void {
+function emitReasoningDebugLog(event: AgentRuntimeEvent): void {
   if (!DEBUG_REASONING_LOGGING_ENABLED) {
     return;
   }
   const reasoningRelated =
-    notification.method === "codex/event/agent_reasoning" ||
-    notification.method === "codex/event/item_started" ||
-    notification.method === "codex/event/item_completed";
+    event.kind === "reasoning" ||
+    event.nativeType === "codex/event/item_started" ||
+    event.nativeType === "codex/event/item_completed";
   if (!reasoningRelated) {
     return;
   }
 
-  const itemType = readNestedString(notification.params, ["msg", "item", "type"]);
+  const itemType = readNestedString(event.payload, ["msg", "item", "type"]);
   if (
-    (notification.method === "codex/event/item_started" || notification.method === "codex/event/item_completed") &&
+    (event.nativeType === "codex/event/item_started" || event.nativeType === "codex/event/item_completed") &&
     itemType !== "Reasoning"
   ) {
     return;
   }
 
-  const decision = diagnoseAgentEventConsoleLog({
-    agentId: notification.agentId,
-    method: notification.method,
-    params: notification.params,
-    receivedAt: new Date().toISOString(),
-  });
+  const decision = diagnoseAgentRuntimeConsoleLog(event);
   const humanMessagePreview =
     decision.extractedHumanMessage && decision.extractedHumanMessage.length > 0
       ? decision.extractedHumanMessage.slice(0, 180)
       : "<none>";
-  const reasoningTextLength = getReasoningTextLength(notification.params);
+  const reasoningTextLength = getReasoningTextLength(event.payload);
   console.error(
-    `[codefleet:fleetctl:debug] agent=${notification.agentId} method=${notification.method} itemType=${itemType ?? "<none>"} reason=${decision.reason} willEmit=${decision.willEmit ? "true" : "false"} reasoningTextLength=${reasoningTextLength} humanMessage=${JSON.stringify(humanMessagePreview)}`,
+    `[codefleet:fleetctl:debug] agent=${event.agentId} provider=${event.provider} nativeType=${event.nativeType ?? "<none>"} itemType=${itemType ?? "<none>"} reason=${decision.reason} willEmit=${decision.willEmit ? "true" : "false"} reasoningTextLength=${reasoningTextLength} humanMessage=${JSON.stringify(humanMessagePreview)}`,
   );
 }
 
-export function formatAppServerNotificationDebugLine(notification: AppServerNotification): string {
+export function formatAgentRuntimeEventDebugLine(event: AgentRuntimeEvent): string {
   const payload = {
-    ts: notification.receivedAt,
-    event: "fleet.app-server.notification",
-    agentId: notification.agentId,
-    method: notification.method,
-    params: notification.params ?? null,
+    ts: event.occurredAt,
+    event: "fleet.agent.runtime.event",
+    provider: event.provider,
+    agentId: event.agentId,
+    kind: event.kind,
+    nativeType: event.nativeType ?? null,
+    message: event.message ?? null,
+    payload: event.payload ?? null,
   };
-  return `[codefleet:fleetctl:app-server] ${JSON.stringify(payload)}`;
+  return `[codefleet:fleetctl:runtime] ${JSON.stringify(payload)}`;
 }
 
 function getReasoningTextLength(params: Record<string, unknown> | undefined): number {

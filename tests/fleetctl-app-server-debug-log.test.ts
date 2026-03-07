@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { formatAppServerNotificationDebugLine } from "../src/cli/commands/fleetctl.js";
+import { formatAgentRuntimeEventDebugLine } from "../src/cli/commands/fleetctl.js";
 
-describe("fleetctl app-server debug line formatting", () => {
-  it("serializes full AppServer notification payload as json", () => {
-    const line = formatAppServerNotificationDebugLine({
+describe("fleetctl runtime debug line formatting", () => {
+  it("serializes full runtime event payload as json", () => {
+    const line = formatAgentRuntimeEventDebugLine({
       agentId: "developer-1",
-      method: "codex/event/item_completed",
-      receivedAt: "2026-03-05T07:41:07.089Z",
-      params: {
+      provider: "codex-app-server",
+      occurredAt: "2026-03-05T07:41:07.089Z",
+      kind: "reasoning",
+      nativeType: "codex/event/item_completed",
+      message: "reasoning: thinking...",
+      payload: {
         msg: {
           type: "item_completed",
           item: {
@@ -18,14 +21,17 @@ describe("fleetctl app-server debug line formatting", () => {
       },
     });
 
-    expect(line.startsWith("[codefleet:fleetctl:app-server] ")).toBe(true);
-    const payload = JSON.parse(line.slice("[codefleet:fleetctl:app-server] ".length)) as Record<string, unknown>;
+    expect(line.startsWith("[codefleet:fleetctl:runtime] ")).toBe(true);
+    const payload = JSON.parse(line.slice("[codefleet:fleetctl:runtime] ".length)) as Record<string, unknown>;
     expect(payload).toEqual({
       ts: "2026-03-05T07:41:07.089Z",
-      event: "fleet.app-server.notification",
+      event: "fleet.agent.runtime.event",
+      provider: "codex-app-server",
       agentId: "developer-1",
-      method: "codex/event/item_completed",
-      params: {
+      kind: "reasoning",
+      nativeType: "codex/event/item_completed",
+      message: "reasoning: thinking...",
+      payload: {
         msg: {
           type: "item_completed",
           item: {
@@ -37,4 +43,3 @@ describe("fleetctl app-server debug line formatting", () => {
     });
   });
 });
-

@@ -97,8 +97,16 @@ const SHUTDOWN_SIGKILL_GRACE_MS = 500;
 
 export class AppServerClient {
   private readonly connections = new Map<string, AppServerConnection>();
+  private readonly notificationListeners = new Set<(notification: AppServerNotification) => void>();
 
   constructor(private readonly options: AppServerClientOptions = {}) {}
+
+  addNotificationListener(listener: (notification: AppServerNotification) => void): () => void {
+    this.notificationListeners.add(listener);
+    return () => {
+      this.notificationListeners.delete(listener);
+    };
+  }
 
   async startAgent(input: StartAgentInput): Promise<StartAgentResult> {
     // Role-specific prompts are passed through env to preserve a single startup entrypoint while
@@ -133,7 +141,12 @@ export class AppServerClient {
       },
     };
     this.connections.set(input.agentId, connection);
-    connection.shutdown = wireConnectionLifecycle(connection, this.connections, this.options.onNotification);
+    connection.shutdown = wireConnectionLifecycle(connection, this.connections, (notification) => {
+      this.options.onNotification?.(notification);
+      for (const listener of this.notificationListeners) {
+        listener(notification);
+      }
+    });
 
     if (input.detached) {
       child.unref();
