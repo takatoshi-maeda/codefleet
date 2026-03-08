@@ -155,6 +155,7 @@ export class FleetService {
         id: target.id,
         role: target.role,
         provider: roleRuntime.provider,
+        runtimeOptions: cloneRuntimeOptions(roleRuntime.config),
         status: "starting",
         pid: null,
         cwd: process.cwd(),
@@ -240,6 +241,7 @@ export class FleetService {
         id: target.id,
         role: target.role,
         provider: runningRuntime?.provider ?? roleRuntime.provider,
+        runtimeOptions: runningRuntime?.runtimeOptions ?? cloneRuntimeOptions(roleRuntime.config),
         status: "stopped",
         pid: pidToStop,
         cwd: runningRuntime?.cwd ?? process.cwd(),
@@ -967,6 +969,7 @@ function migrateLegacyRuntimeAgent(entry: unknown): AgentRuntime {
     id: expectNonEmptyString(runtime.id, "legacy runtime agent.id"),
     role: expectAgentRole(runtime.role, "legacy runtime agent.role"),
     provider: isSupportedAgentProvider(runtime.provider) ? runtime.provider : "codex-app-server",
+    ...(isRecord(runtime.runtimeOptions) ? { runtimeOptions: runtime.runtimeOptions } : {}),
     status: expectRuntimeStatus(runtime.status, "legacy runtime agent.status"),
     pid: typeof runtime.pid === "number" || runtime.pid === null ? runtime.pid : null,
     cwd: expectNonEmptyString(runtime.cwd, "legacy runtime agent.cwd"),
@@ -1007,6 +1010,12 @@ function readNullableString(value: unknown): string | null | undefined {
     return null;
   }
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function cloneRuntimeOptions(runtimeOptions: Record<string, unknown>): Record<string, unknown> {
+  // Persist the exact startup/runtime choice used for this agent so later
+  // config edits do not obscure which provider/options the logs refer to.
+  return JSON.parse(JSON.stringify(runtimeOptions)) as Record<string, unknown>;
 }
 
 function expectNonEmptyString(value: unknown, label: string): string {

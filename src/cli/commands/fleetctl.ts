@@ -940,6 +940,8 @@ function emitAgentRuntimeLog(agent: AgentRuntime, emit: (record: object) => void
     event: "fleet.agent.state",
     agentId: agent.id,
     role: agent.role,
+    provider: agent.provider,
+    runtimeOptions: agent.runtimeOptions ?? {},
     status: agent.status,
     pid: agent.pid,
     cwd: agent.cwd,
@@ -1061,6 +1063,10 @@ function buildPersistedAgentLogLine(payload: Record<string, unknown>): string | 
       return null;
     }
     return `[${ts}] ${summary}`;
+  }
+
+  if (event === "fleet.agent.state") {
+    return `[${ts}] ${humanMessageForEvent(event, payload)}`;
   }
 
   return null;
@@ -2086,7 +2092,9 @@ function humanMessageForEvent(event: string, payload: Record<string, unknown>): 
     const role = typeof payload.role === "string" ? payload.role : "UnknownRole";
     const status = typeof payload.status === "string" ? payload.status : "unknown";
     const pid = typeof payload.pid === "number" ? String(payload.pid) : "-";
-    return `(${role}) status=${status} pid=${pid}`;
+    const provider = typeof payload.provider === "string" ? payload.provider : "unknown-runtime";
+    const runtimeOptions = formatRuntimeOptions(payload.runtimeOptions);
+    return `(${role}) status=${status} pid=${pid} runtime=${provider} options=${runtimeOptions}`;
   }
 
   if (event === "fleet.session.state") {
@@ -2184,6 +2192,28 @@ function formatLogValue(value: unknown): string {
     return String(value);
   }
   return JSON.stringify(value);
+}
+
+function formatRuntimeOptions(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return "{}";
+  }
+  return JSON.stringify(sortObjectKeys(value));
+}
+
+function sortObjectKeys(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => sortObjectKeys(entry));
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => [key, sortObjectKeys(record[key])]),
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

@@ -7,6 +7,7 @@ export interface AgentRuntime {
   id: string;
   role: AgentRole;
   provider: AgentProviderId | "claude-agent-sdk";
+  runtimeOptions?: Record<string, unknown>;
   status: AgentRuntimeStatus;
   pid: number | null;
   cwd: string;

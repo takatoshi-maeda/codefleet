@@ -20,6 +20,10 @@
             "enum": ["Orchestrator", "Curator", "Developer", "Polisher", "Gatekeeper", "Reviewer"]
           },
           "provider": { "type": "string", "enum": ["codex-app-server", "claude-agent-sdk"] },
+          "runtimeOptions": {
+            "type": "object",
+            "additionalProperties": true
+          },
           "status": { "type": "string", "enum": ["starting", "running", "stopped", "failed"] },
           "pid": {
             "anyOf": [

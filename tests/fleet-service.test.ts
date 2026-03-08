@@ -810,6 +810,11 @@ describe("FleetService", () => {
 
     const status = await service.status();
     expect(status.agents.find((agent) => agent.id === "orchestrator-1")?.provider).toBe("claude-agent-sdk");
+    expect(status.agents.find((agent) => agent.id === "orchestrator-1")?.runtimeOptions).toEqual({
+      model: "claude-sonnet-4-5",
+      permissionMode: "acceptEdits",
+      persistSession: false,
+    });
     expect(status.sessions.find((session) => session.agentId === "orchestrator-1")?.provider).toBe("claude-agent-sdk");
   });
 

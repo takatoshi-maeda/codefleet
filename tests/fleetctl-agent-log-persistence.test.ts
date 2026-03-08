@@ -44,4 +44,32 @@ describe("fleetctl agent log persistence", () => {
     const raw = await fs.readFile(path.join(logDir, "developer-1.log"), "utf8");
     expect(raw).toContain("[2026-03-03T00:00:01.000Z] turn completed: thread/turn");
   });
+
+  it("persists runtime provider and options for fleet.agent.state startup lines", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-agent-log-"));
+    const logDir = path.join(tempDir, ".codefleet", "logs", "agents");
+
+    enqueueFleetAgentLogWrite(
+      {
+        ts: "2026-03-03T00:00:02.000Z",
+        event: "fleet.agent.state",
+        agentId: "orchestrator-1",
+        role: "Orchestrator",
+        status: "running",
+        pid: null,
+        provider: "claude-agent-sdk",
+        runtimeOptions: {
+          permissionMode: "acceptEdits",
+          model: "claude-sonnet-4-5",
+        },
+      },
+      logDir,
+    );
+    await flushFleetAgentLogWritesForTest();
+
+    const raw = await fs.readFile(path.join(logDir, "orchestrator-1.log"), "utf8");
+    expect(raw).toContain(
+      '[2026-03-03T00:00:02.000Z] (Orchestrator) status=running pid=- runtime=claude-agent-sdk options={"model":"claude-sonnet-4-5","permissionMode":"acceptEdits"}',
+    );
+  });
 });
