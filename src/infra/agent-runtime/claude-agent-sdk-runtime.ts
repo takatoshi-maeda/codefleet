@@ -62,6 +62,13 @@ export class ClaudeAgentSdkRuntime implements RoleAgentRuntime {
         if (event) {
           this.onEvent?.(event);
         }
+        // Some Claude SDK streams can emit a terminal result message before the
+        // async iterator actually closes. Treat the result as authoritative so
+        // queue processing cannot hang indefinitely waiting for iterator teardown.
+        if (message.type === "result") {
+          claudeQuery.close();
+          break;
+        }
       }
     } finally {
       this.inFlightQueries.delete(input.agentId);

@@ -35,6 +35,25 @@ class FakeClaudeQuery implements AsyncIterable<{
   }
 }
 
+class HangingAfterResultClaudeQuery extends FakeClaudeQuery {
+  override async *[Symbol.asyncIterator]() {
+    for (const message of [
+      { type: "system", subtype: "init", uuid: "msg-init", session_id: "sess-999" },
+      { type: "result", subtype: "success", uuid: "msg-result", session_id: "sess-999" },
+    ] as const) {
+      if (this.closed) {
+        return;
+      }
+      yield message;
+    }
+
+    // Simulate an SDK stream that emitted result but never naturally closed.
+    while (!this.closed) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+}
+
 class FakeClaudeAgentSdkClient implements ClaudeAgentSdkClient {
   public calls: Array<{ prompt: string; options: Record<string, unknown> }> = [];
   public lastQuery: FakeClaudeQuery | null = null;
@@ -126,6 +145,31 @@ describe("ClaudeAgentSdkRuntime", () => {
     await execution;
     expect(client.calls[0]?.options.resume).toBe("sess-existing");
     expect(client.calls[0]?.options.settingSources).toEqual(["project"]);
+  });
+
+  it("returns immediately after a terminal result even if the iterator does not close", async () => {
+    const client: ClaudeAgentSdkClient = {
+      query() {
+        return new HangingAfterResultClaudeQuery([]);
+      },
+    };
+    const runtime = new ClaudeAgentSdkRuntime(client);
+
+    const result = await runtime.execute({
+      agentId: "reviewer-1",
+      role: "Reviewer",
+      cwd: "/workspace",
+      prompt: "Review the epic",
+      runtimeConfig: {},
+    });
+
+    expect(result).toMatchObject({
+      provider: "claude-agent-sdk",
+      session: {
+        conversationId: "sess-999",
+        activeInvocationId: "msg-result",
+      },
+    });
   });
 
   it("emits Claude thinking and tool-use progress when partial messages are enabled", async () => {
