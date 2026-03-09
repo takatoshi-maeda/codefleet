@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createServer } from 'node:http';
-import { access, readFile, stat } from 'node:fs/promises';
+import { access, readFile, stat, writeFile } from 'node:fs/promises';
 import { constants as fsConstants } from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
@@ -12,6 +12,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const packageRoot = path.resolve(__dirname, '..');
 const distDir = path.join(packageRoot, 'dist');
+const buildMetadataPath = path.join(distDir, '.codefleet-web-build.json');
+const ANSI_GREEN = '\x1b[32m';
+const ANSI_RESET = '\x1b[0m';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -137,7 +140,82 @@ function spawnCommand(command, args, options = {}) {
   });
 }
 
-async function exportWebBundle(baseUrl) {
+function captureCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: packageRoot,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: process.env,
+      ...options,
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk;
+    });
+
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk;
+    });
+
+    child.on('error', reject);
+    child.on('exit', (code, signal) => {
+      if (signal) {
+        reject(new Error(`Command terminated with signal ${signal}`));
+        return;
+      }
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || `Command exited with code ${code}`));
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
+}
+
+async function resolveUiHeadTreeHash() {
+  try {
+    return await captureCommand('git', ['rev-parse', 'HEAD:ui']);
+  } catch {
+    return null;
+  }
+}
+
+async function readBuildMetadata() {
+  try {
+    const raw = await readFile(buildMetadataPath, 'utf8');
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+async function writeBuildMetadata(metadata) {
+  await writeFile(buildMetadataPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+}
+
+async function hasReusableBuild({ baseUrl, uiHeadTreeHash }) {
+  if (!uiHeadTreeHash) {
+    return false;
+  }
+
+  const [metadata, indexExists] = await Promise.all([
+    readBuildMetadata(),
+    isReadableFile(path.join(distDir, 'index.html')),
+  ]);
+
+  if (!metadata || !indexExists) {
+    return false;
+  }
+
+  return metadata.codefleetApiBaseUrl === baseUrl && metadata.uiHeadTreeHash === uiHeadTreeHash;
+}
+
+async function exportWebBundle({ baseUrl, uiHeadTreeHash }) {
   const expoCliPath = resolveExpoCliPath();
 
   await spawnCommand(process.execPath, [expoCliPath, 'export', '--platform', 'web', '--output-dir', 'dist'], {
@@ -145,6 +223,11 @@ async function exportWebBundle(baseUrl) {
       ...process.env,
       EXPO_PUBLIC_CODEFLEET_BASE_URL: baseUrl,
     },
+  });
+
+  await writeBuildMetadata({
+    codefleetApiBaseUrl: baseUrl,
+    uiHeadTreeHash,
   });
 }
 
@@ -254,12 +337,21 @@ async function startStaticServer({ host, port }) {
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-  console.log(`Serving ${distDir} at http://${host}:${port}`);
+  console.log(`${ANSI_GREEN}Serving ${distDir} at http://${host}:${port}${ANSI_RESET}`);
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  await exportWebBundle(options.codefleetApiBaseUrl);
+  const normalizedBaseUrl = new URL(options.codefleetApiBaseUrl).toString();
+  const uiHeadTreeHash = await resolveUiHeadTreeHash();
+
+  // Reuse only when the baked API base URL and the committed ui/ tree snapshot are unchanged.
+  if (await hasReusableBuild({ baseUrl: normalizedBaseUrl, uiHeadTreeHash })) {
+    console.log(`Reusing existing web build in ${distDir}`);
+  } else {
+    console.log(`Building web bundle into ${distDir}`);
+    await exportWebBundle({ baseUrl: normalizedBaseUrl, uiHeadTreeHash });
+  }
   await startStaticServer(options);
 }
 
