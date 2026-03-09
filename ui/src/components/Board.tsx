@@ -110,6 +110,23 @@ function formatDate(value?: string): string {
   return formatCodefleetTimestamp(value) ?? '-';
 }
 
+function formatEpicVisibility(epic: CodefleetEpic): string {
+  const type = epic.visibility?.type;
+  if (!type) return '-';
+
+  const dependsOnEpicIds = epic.visibility?.dependsOnEpicIds ?? [];
+  if (dependsOnEpicIds.length === 0) {
+    return type;
+  }
+
+  return `${type} (${dependsOnEpicIds.join(', ')})`;
+}
+
+function formatIdList(ids?: string[]): string {
+  if (!ids || ids.length === 0) return '-';
+  return ids.join(', ');
+}
+
 function isInProgressStatus(status?: string): boolean {
   const normalized = (status ?? '').trim().toLowerCase();
   return (
@@ -569,6 +586,12 @@ export function Board({
               <Text style={[styles.metaLine, { color: subTextColor }]}>ID: {selectedEpic.id}</Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>Kind: {selectedEpic.kind ?? '-'}</Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>Status: {selectedEpic.status ?? '-'}</Text>
+              <Text style={[styles.metaLine, { color: subTextColor }]}>
+                Visibility: {formatEpicVisibility(selectedEpic)}
+              </Text>
+              <Text style={[styles.metaLine, { color: subTextColor }]}>
+                Acceptance Tests: {formatIdList(selectedEpic.acceptanceTestIds)}
+              </Text>
 
               {getStatusTimeline(selectedEpic.statusChangeHistory).length > 0 ? (
                 <View style={styles.notesSection}>
