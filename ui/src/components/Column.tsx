@@ -15,6 +15,13 @@ function normalizeItemStatus(status?: string): string {
   return (status ?? '').trim().toLowerCase();
 }
 
+function formatDevelopmentScopes(scopes?: string[]): string {
+  if (!scopes || scopes.length === 0) {
+    return '-';
+  }
+  return scopes.join(', ');
+}
+
 function buildItemStatusSummary(epicStatus: string | undefined, items: CodefleetItem[]): {
   doneCount: number;
   totalCount: number;
@@ -99,7 +106,9 @@ export function Column({ title, epics, itemsByEpicId, selectedEpicId, onEpicPres
                 </Text>
                 <View style={styles.metaRow}>
                   <Text style={[styles.epicMeta, { color: subTextColor }]}>{epic.status ?? '-'}</Text>
-                  <Text style={[styles.epicMeta, { color: subTextColor }]}>{epic.kind ?? '-'}</Text>
+                  <Text style={[styles.epicMeta, { color: subTextColor }]} numberOfLines={1}>
+                    {formatDevelopmentScopes(epic.developmentScopes)}
+                  </Text>
                 </View>
               </Pressable>
             );

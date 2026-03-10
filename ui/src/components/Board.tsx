@@ -127,6 +127,11 @@ function formatIdList(ids?: string[]): string {
   return ids.join(', ');
 }
 
+function formatDevelopmentScopes(scopes?: string[]): string {
+  if (!scopes || scopes.length === 0) return '-';
+  return scopes.join(', ');
+}
+
 function isInProgressStatus(status?: string): boolean {
   const normalized = (status ?? '').trim().toLowerCase();
   return (
@@ -585,6 +590,9 @@ export function Board({
               <Text style={[styles.paneTitle, { color: textColor }]}>{selectedEpic.title}</Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>ID: {selectedEpic.id}</Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>Kind: {selectedEpic.kind ?? '-'}</Text>
+              <Text style={[styles.metaLine, { color: subTextColor }]}>
+                Development Scopes: {formatDevelopmentScopes(selectedEpic.developmentScopes)}
+              </Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>Status: {selectedEpic.status ?? '-'}</Text>
               <Text style={[styles.metaLine, { color: subTextColor }]}>
                 Visibility: {formatEpicVisibility(selectedEpic)}
