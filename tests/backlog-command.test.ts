@@ -109,4 +109,55 @@ describe("backlog command", () => {
     expect(updateSpy).toHaveBeenCalledWith("pm-agent");
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
   });
+
+  it("passes development scopes to epic add and update", async () => {
+    const addSpy = vi.spyOn(BacklogService.prototype, "addEpic").mockResolvedValue({
+      id: "E-001",
+      title: "Scoped epic",
+      kind: "product",
+      developmentScopes: ["frontend", "backend", "other"],
+      notes: [],
+      status: "todo",
+      statusChangeHistory: [],
+      visibility: { type: "always-visible", dependsOnEpicIds: [] },
+      acceptanceTestIds: [],
+      updatedAt: "2026-03-10T00:00:00.000Z",
+    });
+    const updateSpy = vi.spyOn(BacklogService.prototype, "updateEpic").mockResolvedValue({
+      id: "E-001",
+      title: "Scoped epic",
+      kind: "product",
+      developmentScopes: ["backend"],
+      notes: [],
+      status: "todo",
+      statusChangeHistory: [],
+      visibility: { type: "always-visible", dependsOnEpicIds: [] },
+      acceptanceTestIds: [],
+      updatedAt: "2026-03-10T00:00:00.000Z",
+    });
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createBacklogCli().parseAsync(
+      [
+        "epic",
+        "add",
+        "--title",
+        "Scoped epic",
+        "--development-scope",
+        "frontend",
+        "--development-scope",
+        "backend",
+        "--development-scope",
+        "other",
+      ],
+      { from: "user" },
+    );
+    await createBacklogCli().parseAsync(
+      ["epic", "update", "--id", "E-001", "--development-scope", "backend"],
+      { from: "user" },
+    );
+
+    expect(addSpy).toHaveBeenCalledWith(expect.objectContaining({ developmentScopes: ["frontend", "backend", "other"] }));
+    expect(updateSpy).toHaveBeenCalledWith(expect.objectContaining({ id: "E-001", developmentScopes: ["backend"] }));
+  });
 });

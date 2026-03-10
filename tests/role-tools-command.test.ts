@@ -109,6 +109,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout Revamp",
       kind: "product",
+      developmentScopes: ["frontend"],
       status: "todo",
       notes: [{ id: "N-001", content: "Scope aligned with latest acceptance plan", createdAt: "2026-03-04T00:00:00.000Z" }],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -117,13 +118,25 @@ describe("role tools commands", () => {
     });
 
     await createOrchestratorToolsCli().parseAsync(
-      ["epic", "upsert", "--id", "E-012", "--title", "Checkout Revamp", "--note", "Scope aligned with latest acceptance plan"],
+      [
+        "epic",
+        "upsert",
+        "--id",
+        "E-012",
+        "--title",
+        "Checkout Revamp",
+        "--development-scope",
+        "frontend",
+        "--note",
+        "Scope aligned with latest acceptance plan",
+      ],
       { from: "user" },
     );
 
     expect(updateSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "E-012",
+        developmentScopes: ["frontend"],
         addNotes: ["Scope aligned with latest acceptance plan"],
       }),
     );
@@ -230,6 +243,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "in-progress",
       notes: [{ id: "N-101", content: "Need API clarification", createdAt: "2026-03-04T00:00:00.000Z" }],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -280,6 +294,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "in-progress",
       notes: [],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -301,6 +316,7 @@ describe("role tools commands", () => {
     "id": "E-012",
     "title": "Checkout",
     "kind": "product",
+    "developmentScopes": [],
     "status": "in-progress",
     "notes": [],
     "visibility": {
@@ -357,6 +373,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "done",
       notes: [],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -378,6 +395,7 @@ describe("role tools commands", () => {
     "id": "E-012",
     "title": "Checkout",
     "kind": "product",
+    "developmentScopes": [],
     "status": "done",
     "notes": [],
     "visibility": {
@@ -405,6 +423,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "changes-requested",
       notes: [{ id: "N-001", content: "Repro: ... Expected: ... Cause: ... Fix: ...", createdAt: "2026-03-04T00:00:00.000Z" }],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -459,6 +478,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "in-review",
       notes: [{ id: "N-201", content: "Homepage hero still feels visually dense on tablet", createdAt: "2026-03-04T00:00:00.000Z" }],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },
@@ -531,6 +551,7 @@ describe("role tools commands", () => {
       id: "E-012",
       title: "Checkout",
       kind: "product",
+      developmentScopes: [],
       status: "in-review",
       notes: [{ id: "N-301", content: "Observed borderline mobile overflow in Safari", createdAt: "2026-03-04T00:00:00.000Z" }],
       visibility: { type: "always-visible", dependsOnEpicIds: [] },

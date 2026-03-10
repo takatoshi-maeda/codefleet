@@ -154,6 +154,7 @@ function decodeEpic(raw: unknown): CodefleetEpic | null {
     id,
     title,
     kind: decodeString(record.kind),
+    developmentScopes: decodeStringArray(record.developmentScopes),
     notes: decodeNotes(record.notes),
     status: decodeString(record.status),
     updatedAt: decodeString(record.updatedAt),

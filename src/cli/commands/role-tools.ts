@@ -11,6 +11,7 @@ import { AcceptanceTestService } from "../../domain/acceptance/acceptance-test-s
 import { BacklogService } from "../../domain/backlog/backlog-service.js";
 import type {
   BacklogEpic,
+  BacklogEpicDevelopmentScope,
   BacklogEpicStatus,
   BacklogItem,
   BacklogItemStatus,
@@ -69,6 +70,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
     .requiredOption("--title <title>", "Epic title")
     .option("--note <note>", "Single note to append")
     .option("--kind <kind>", "Epic kind (product|technical)")
+    .option("--development-scope <scope>", "Epic development scope (frontend|backend|other)", collectRepeatable, [])
     .option("--status <status>", "Epic status")
     .option("--visibility-type <type>", "always-visible or blocked-until-epic-complete")
     .option("--depends-on <epicId>", "Epic dependency id", collectRepeatable, [])
@@ -80,6 +82,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
         title: string;
         note?: string;
         kind?: BacklogWorkKind;
+        developmentScope: string[];
         status?: BacklogEpicStatus;
         visibilityType?: VisibilityType;
         dependsOn: string[];
@@ -101,6 +104,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
             title: options.title,
             addNotes: options.note ? [options.note] : undefined,
             kind: options.kind,
+            developmentScopes: options.developmentScope as BacklogEpicDevelopmentScope[] | undefined,
             status: options.status,
             visibility,
             acceptanceTestIds: options.acceptanceTest.length > 0 ? options.acceptanceTest : undefined,
@@ -110,6 +114,7 @@ export function createOrchestratorToolsCommand(options: RoleToolsCommandOptions 
             title: options.title,
             notes: options.note ? [options.note] : [],
             kind: options.kind,
+            developmentScopes: options.developmentScope as BacklogEpicDevelopmentScope[],
             status: options.status,
             visibility,
             acceptanceTestIds: options.acceptanceTest,
@@ -1013,7 +1018,7 @@ function buildOrchestratorManual(executableName: string): string {
     "```bash",
     `${executableName} agents-md view`,
     `${executableName} current-context view`,
-    `${executableName} epic upsert --id E-012 --title \"Checkout Revamp\" --note \"Scope aligned with latest acceptance plan\"`,
+    `${executableName} epic upsert --id E-012 --title \"Checkout Revamp\" --development-scope frontend --note \"Scope aligned with latest acceptance plan\"`,
     `${executableName} item view --id I-104`,
     `${executableName} item upsert --id I-104 --epic E-012 --title \"Add E2E coverage\" --note \"Waiting on API contract confirmation\"`,
     `${executableName} question add --title \"Clarify discount edge-case\" --details \"...\"`,

@@ -9,14 +9,19 @@
     "updatedAt": { "type": "string", "format": "date-time" },
     "epics": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
         "required": ["id", "title", "status", "visibility", "acceptanceTestIds", "updatedAt"],
         "properties": {
           "id": { "type": "string", "pattern": "^E-[0-9]{3,}$" },
           "title": { "type": "string", "minLength": 1 },
           "kind": { "type": "string", "enum": ["product", "technical"] },
+          "developmentScopes": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["frontend", "backend", "other"] },
+            "uniqueItems": true
+          },
           "notes": {
             "type": "array",
             "items": {

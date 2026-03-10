@@ -172,6 +172,65 @@ describe("BacklogService", () => {
     expect(epic.acceptanceTestIds).toEqual(["AT-001"]);
   });
 
+  it("stores and updates epic developmentScopes with legacy fallback", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
+    const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
+    const acceptanceSpecPath = path.join(tempDir, ".codefleet/data/acceptance-testing/spec.json");
+    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
+    const backlogItemsPath = path.join(backlogDir, "items.json");
+
+    await fs.mkdir(path.dirname(acceptanceSpecPath), { recursive: true });
+    await fs.writeFile(
+      acceptanceSpecPath,
+      JSON.stringify({ version: 1, updatedAt: "2026-01-01T00:00:00.000Z", tests: [] }, null, 2),
+      "utf8",
+    );
+    await fs.mkdir(path.dirname(rolesPath), { recursive: true });
+    await fs.writeFile(rolesPath, JSON.stringify({ agents: [] }, null, 2), "utf8");
+
+    const service = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const epic = await service.addEpic({
+      title: "scoped epic",
+      developmentScopes: ["frontend", "backend", "other", "frontend"],
+      acceptanceTestIds: [],
+    });
+
+    expect(epic.developmentScopes).toEqual(["frontend", "backend", "other"]);
+
+    const updated = await service.updateEpic({ id: epic.id, developmentScopes: ["backend", "backend"] });
+    expect(updated.developmentScopes).toEqual(["backend"]);
+
+    await fs.mkdir(path.dirname(backlogItemsPath), { recursive: true });
+    await fs.writeFile(
+      backlogItemsPath,
+      JSON.stringify(
+        {
+          version: 1,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          epics: [
+            {
+              id: "E-001",
+              title: "legacy epic",
+              status: "todo",
+              visibility: { type: "always-visible", dependsOnEpicIds: [] },
+              acceptanceTestIds: [],
+              updatedAt: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          items: [],
+          questions: [],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const legacyService = new BacklogService(backlogDir, acceptanceSpecPath, rolesPath);
+    const listed = await legacyService.list({ includeHidden: true });
+    expect(listed.epics[0]?.developmentScopes).toEqual([]);
+  });
+
   it("appends and removes notes for epic and item", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
@@ -482,6 +541,7 @@ describe("BacklogService", () => {
       content: "legacy epic note",
       createdAt: "2026-01-01T00:00:00.000Z",
     });
+    expect(listed.epics[0]?.developmentScopes).toEqual([]);
     expect(listed.items[0]?.notes?.[0]).toMatchObject({
       content: "legacy item note",
       createdAt: "2026-01-01T00:00:00.000Z",

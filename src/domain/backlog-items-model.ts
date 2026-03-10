@@ -16,6 +16,7 @@ export type BacklogEpicStatusChangeHistory = StatusChangeHistoryEntry<BacklogEpi
 export type BacklogItemStatusChangeHistory = StatusChangeHistoryEntry<BacklogItemStatus>[];
 export type BacklogQuestionStatus = "open" | "answered";
 export type BacklogWorkKind = "product" | "technical";
+export type BacklogEpicDevelopmentScope = "frontend" | "backend" | "other";
 
 export type VisibilityType = "always-visible" | "blocked-until-epic-complete";
 
@@ -35,6 +36,7 @@ export interface BacklogEpic {
   id: string;
   title: string;
   kind?: BacklogWorkKind;
+  developmentScopes: BacklogEpicDevelopmentScope[];
   notes?: BacklogNote[];
   status: BacklogEpicStatus;
   statusChangeHistory: BacklogEpicStatusChangeHistory;

@@ -5,6 +5,7 @@ import { CodefleetError } from "../../shared/errors.js";
 import type { AcceptanceTestingSpec } from "../acceptance-testing-spec-model.js";
 import type {
   BacklogEpic,
+  BacklogEpicDevelopmentScope,
   BacklogEpicStatus,
   BacklogEpicStatusChangeHistory,
   BacklogItem,
@@ -66,6 +67,7 @@ interface ListInput {
 interface AddEpicInput {
   title: string;
   kind?: BacklogWorkKind;
+  developmentScopes?: BacklogEpicDevelopmentScope[];
   notes?: string[];
   status?: BacklogEpicStatus;
   visibility?: VisibilityRule;
@@ -77,6 +79,7 @@ interface UpdateEpicInput {
   id: string;
   title?: string;
   kind?: BacklogWorkKind;
+  developmentScopes?: BacklogEpicDevelopmentScope[];
   addNotes?: string[];
   removeNotes?: string[];
   status?: BacklogEpicStatus;
@@ -372,6 +375,7 @@ export class BacklogService {
       id: nextEpicId(items.epics),
       title: input.title,
       kind: input.kind ?? "product",
+      developmentScopes: unique(input.developmentScopes ?? []),
       notes: buildNotes([], input.notes, input.actorId, now),
       status: input.status ?? "todo",
       statusChangeHistory: [buildStatusHistorySeed(input.status ?? "todo", now)],
@@ -418,6 +422,9 @@ export class BacklogService {
     }
     if (input.kind !== undefined) {
       epic.kind = input.kind;
+    }
+    if (input.developmentScopes !== undefined) {
+      epic.developmentScopes = unique(input.developmentScopes);
     }
 
     if (input.addNotes || input.removeNotes) {
@@ -839,7 +846,7 @@ function defaultVisibility(): VisibilityRule {
   };
 }
 
-function unique(values: string[]): string[] {
+function unique<T extends string>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
 
@@ -885,6 +892,7 @@ function normalizeBacklogItems(items: RawBacklogItems): NormalizedBacklogItems {
     epics: items.epics.map(({ statusChangedAt: legacyStatusChangedAt, ...epic }) => ({
       ...epic,
       kind: epic.kind ?? "product",
+      developmentScopes: unique(epic.developmentScopes ?? []),
       notes: normalizeNotes(epic.notes, epic.updatedAt),
       statusChangeHistory: normalizeEpicStatusChangeHistory(epic.statusChangeHistory, legacyStatusChangedAt, epic.status, epic.updatedAt),
     })),

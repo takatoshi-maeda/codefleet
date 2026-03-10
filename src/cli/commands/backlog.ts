@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import type {
+  BacklogEpicDevelopmentScope,
   BacklogEpicStatus,
   BacklogItemStatus,
   BacklogQuestionStatus,
@@ -61,6 +62,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
     .command("add")
     .requiredOption("--title <title>", "Epic title")
     .option("--kind <kind>", "Epic kind (product|technical)", "product")
+    .option("--development-scope <scope>", "Epic development scope (frontend|backend|other)", collectRepeatable, [])
     .option("--note <note>", "Epic note", collectRepeatable, [])
     .option("--status <status>", "Epic status", "todo")
     .option("--visibility-type <type>", "always-visible or blocked-until-epic-complete", "always-visible")
@@ -71,6 +73,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
       const epicResult = await service.addEpic({
         title: options.title,
         kind: options.kind as BacklogWorkKind,
+        developmentScopes: options.developmentScope as BacklogEpicDevelopmentScope[],
         notes: options.note,
         status: options.status as BacklogEpicStatus,
         visibility: {
@@ -127,6 +130,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
     .requiredOption("--id <id>", "Epic id")
     .option("--title <title>", "Epic title")
     .option("--kind <kind>", "Epic kind (product|technical)")
+    .option("--development-scope <scope>", "Epic development scope ids (replace: frontend|backend|other)", collectRepeatable)
     .option("--add-note <note>", "Append epic note", collectRepeatable, [])
     .option("--remove-note <note>", "Remove epic note by exact match", collectRepeatable, [])
     .option("--status <status>", "Epic status")
@@ -148,6 +152,7 @@ export function createBacklogCommand(options: BacklogCommandOptions = {}): Comma
         id: options.id,
         title: options.title,
         kind: options.kind as BacklogWorkKind | undefined,
+        developmentScopes: options.developmentScope as BacklogEpicDevelopmentScope[] | undefined,
         addNotes: options.addNote,
         removeNotes: options.removeNote,
         status: options.status as BacklogEpicStatus | undefined,
@@ -352,8 +357,8 @@ function buildBacklogAgentUsageHelp(executableName: string): string {
     "  - Register open questions as soon as planning uncertainty is detected, then answer/close them explicitly.",
     "- Key commands:",
     "```bash",
-    `${executableName} epic add --title \"...\" --kind product --visibility-type always-visible`,
-    `${executableName} epic add --title \"...\" --kind technical --visibility-type always-visible`,
+    `${executableName} epic add --title \"...\" --kind product --development-scope frontend --visibility-type always-visible`,
+    `${executableName} epic add --title \"...\" --kind technical --development-scope backend --visibility-type always-visible`,
     `${executableName} item add --epic E-001 --title \"...\"`,
     `${executableName} question add --title \"...\" --details \"...\"`,
     `${executableName} question answer --id Q-001 --answer \"...\"`,

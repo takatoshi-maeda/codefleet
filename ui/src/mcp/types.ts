@@ -15,6 +15,7 @@ export type CodefleetEpic = {
   id: string;
   title: string;
   kind?: string;
+  developmentScopes?: string[];
   notes: CodefleetNote[];
   status?: string;
   updatedAt?: string;
