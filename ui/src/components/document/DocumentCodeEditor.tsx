@@ -3,7 +3,7 @@ import { Platform, StyleSheet, TextInput } from 'react-native';
 type Props = {
   value: string;
   onChange: (next: string) => void;
-  language: 'markdown' | 'python' | 'text' | 'image';
+  language: 'markdown' | 'python' | 'text' | 'image' | 'video' | 'pdf' | 'binary';
   textColor: string;
   mutedTextColor: string;
   backgroundColor: string;

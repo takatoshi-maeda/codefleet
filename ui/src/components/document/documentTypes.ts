@@ -5,7 +5,7 @@ export type DocumentTreeNode = {
   kind: 'file' | 'folder';
   children?: DocumentTreeNode[];
   content?: string;
-  language?: 'markdown' | 'python' | 'text' | 'image';
+  language?: 'markdown' | 'python' | 'text' | 'image' | 'video' | 'pdf' | 'binary';
 };
 
 export type DocumentReleaseNote = {

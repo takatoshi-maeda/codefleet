@@ -9,7 +9,14 @@ export type DocumentActor = {
   id: string;
 };
 
-export type DocumentLanguage = "markdown" | "python" | "text" | "image";
+export type DocumentLanguage =
+  | "markdown"
+  | "python"
+  | "text"
+  | "image"
+  | "video"
+  | "pdf"
+  | "binary";
 
 export type DocumentTreeNode = {
   id: string;
@@ -24,10 +31,12 @@ export type DocumentFile = {
   path: string;
   name: string;
   language: DocumentLanguage;
-  content: string;
+  content: string | null;
   version: string;
   updatedAt: string;
   updatedBy: DocumentActor | null;
+  mimeType: string;
+  isBinary: boolean;
 };
 
 export type DocumentIndexEntry = {
@@ -87,7 +96,7 @@ export class DocumentService {
     await fs.mkdir(this.resolveRootAbsolutePath(), { recursive: true });
     const entries = new Map<string, DocumentIndexEntry>();
     await this.walkFiles(this.rootDirName, async (documentPath, absolutePath) => {
-      const [content, stats] = await Promise.all([fs.readFile(absolutePath, "utf8"), fs.stat(absolutePath)]);
+      const [content, stats] = await Promise.all([fs.readFile(absolutePath), fs.stat(absolutePath)]);
       entries.set(documentPath, {
         path: documentPath,
         version: computeVersion(content),
@@ -100,16 +109,26 @@ export class DocumentService {
 
   async readFile(documentPath: string): Promise<DocumentFile> {
     const absolutePath = this.resolveDocumentAbsolutePath(documentPath);
-    const [content, stats] = await Promise.all([fs.readFile(absolutePath, "utf8"), fs.stat(absolutePath)]);
+    const language = inferLanguage(documentPath);
+    const mimeType = inferMimeType(documentPath, language);
+    const isBinary = isBinaryLanguage(language);
+    const [contentBuffer, stats] = await Promise.all([fs.readFile(absolutePath), fs.stat(absolutePath)]);
     return {
       path: this.normalizeDocumentPath(documentPath),
       name: path.basename(documentPath),
-      language: inferLanguage(documentPath),
-      content,
-      version: computeVersion(content),
+      language,
+      content: isBinary ? null : contentBuffer.toString("utf8"),
+      version: computeVersion(contentBuffer),
       updatedAt: stats.mtime.toISOString(),
       updatedBy: this.actorByPath.get(this.normalizeDocumentPath(documentPath)) ?? null,
+      mimeType,
+      isBinary,
     };
+  }
+
+  async readFileBuffer(documentPath: string): Promise<Buffer> {
+    const absolutePath = this.resolveDocumentAbsolutePath(documentPath);
+    return fs.readFile(absolutePath);
   }
 
   async writeFile(input: DocumentWriteInput): Promise<DocumentFile> {
@@ -240,7 +259,11 @@ async function atomicWriteText(filePath: string, value: string): Promise<void> {
   await fs.rename(tempPath, filePath);
 }
 
-function computeVersion(content: string): string {
+function isBinaryLanguage(language: DocumentLanguage): boolean {
+  return language === "image" || language === "video" || language === "pdf" || language === "binary";
+}
+
+function computeVersion(content: string | Buffer): string {
   return `sha256:${createHash("sha256").update(content).digest("hex")}`;
 }
 
@@ -255,5 +278,43 @@ function inferLanguage(documentPath: string): DocumentLanguage {
   if ([".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"].includes(extension)) {
     return "image";
   }
+  if ([".mp4", ".webm", ".mov", ".m4v", ".ogg"].includes(extension)) {
+    return "video";
+  }
+  if (extension === ".pdf") {
+    return "pdf";
+  }
+  if ([".zip", ".gz", ".tar", ".bin"].includes(extension)) {
+    return "binary";
+  }
   return "text";
+}
+
+function inferMimeType(documentPath: string, language: DocumentLanguage): string {
+  const extension = path.extname(documentPath).toLowerCase();
+  switch (language) {
+    case "markdown":
+      return "text/markdown; charset=utf-8";
+    case "python":
+      return "text/x-python; charset=utf-8";
+    case "text":
+      return "text/plain; charset=utf-8";
+    case "image":
+      if (extension === ".png") return "image/png";
+      if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
+      if (extension === ".gif") return "image/gif";
+      if (extension === ".webp") return "image/webp";
+      if (extension === ".svg") return "image/svg+xml";
+      return "application/octet-stream";
+    case "video":
+      if (extension === ".mp4" || extension === ".m4v") return "video/mp4";
+      if (extension === ".webm") return "video/webm";
+      if (extension === ".mov") return "video/quicktime";
+      if (extension === ".ogg") return "video/ogg";
+      return "application/octet-stream";
+    case "pdf":
+      return "application/pdf";
+    default:
+      return "application/octet-stream";
+  }
 }

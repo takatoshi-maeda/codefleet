@@ -4,6 +4,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } fr
 import type {
   CodefleetClient,
   DocumentActor,
+  DocumentFileResult,
   DocumentTreeNode as RemoteDocumentTreeNode,
   DocumentWatchEvent,
 } from '../../mcp/client';
@@ -74,6 +75,7 @@ export function DocumentWorkspace({ client }: Props) {
   const [collapsedFolderIds, setCollapsedFolderIds] = useState<Set<string>>(() => new Set());
   const [draftByFileId, setDraftByFileId] = useState<Record<string, string>>({});
   const [versionByFileId, setVersionByFileId] = useState<Record<string, string>>({});
+  const [fileDetailsByFileId, setFileDetailsByFileId] = useState<Record<string, DocumentFileResult>>({});
   const [dirtyByFileId, setDirtyByFileId] = useState<Record<string, boolean>>({});
   const [loadedByFileId, setLoadedByFileId] = useState<Record<string, boolean>>({});
   const [savingByFileId, setSavingByFileId] = useState<Record<string, boolean>>({});
@@ -103,6 +105,15 @@ export function DocumentWorkspace({ client }: Props) {
 
   const activeFile = activeTabId ? nodeById.get(activeTabId) ?? null : null;
   const activeFileDraft = activeFile?.kind === 'file' ? draftByFileId[activeFile.id] ?? '' : '';
+  const activeFileDetails = activeFile?.kind === 'file' ? fileDetailsByFileId[activeFile.id] ?? null : null;
+  const activeFileAssetUrl =
+    activeFile?.kind === 'file' &&
+    (activeFile.language === 'image' ||
+      activeFile.language === 'video' ||
+      activeFile.language === 'pdf' ||
+      activeFile.language === 'binary')
+      ? client.getDocumentAssetUrl(activeFile.id)
+      : null;
 
   const refreshTree = useCallback(async () => {
     const payload = await client.listDocumentsTree();
@@ -118,11 +129,12 @@ export function DocumentWorkspace({ client }: Props) {
   const loadFile = useCallback(
     async (fileId: string, options?: { preserveDraft?: boolean }) => {
       const payload = await client.getDocumentFile(fileId);
+      setFileDetailsByFileId((previous) => ({ ...previous, [fileId]: payload }));
       setVersionByFileId((previous) => ({ ...previous, [fileId]: payload.version }));
       setLoadedByFileId((previous) => ({ ...previous, [fileId]: true }));
       setConflictedByFileId((previous) => ({ ...previous, [fileId]: false }));
       if (!options?.preserveDraft) {
-        setDraftByFileId((previous) => ({ ...previous, [fileId]: payload.content }));
+        setDraftByFileId((previous) => ({ ...previous, [fileId]: payload.content ?? '' }));
         setDirtyByFileId((previous) => ({ ...previous, [fileId]: false }));
       }
     },
@@ -139,7 +151,8 @@ export function DocumentWorkspace({ client }: Props) {
           baseVersion: versionByFileId[fileId] ?? null,
           actor: actorRef.current,
         });
-        setDraftByFileId((previous) => ({ ...previous, [fileId]: payload.content }));
+        setFileDetailsByFileId((previous) => ({ ...previous, [fileId]: payload }));
+        setDraftByFileId((previous) => ({ ...previous, [fileId]: payload.content ?? '' }));
         setVersionByFileId((previous) => ({ ...previous, [fileId]: payload.version }));
         setDirtyByFileId((previous) => ({ ...previous, [fileId]: false }));
         setConflictedByFileId((previous) => ({ ...previous, [fileId]: false }));
@@ -203,6 +216,7 @@ export function DocumentWorkspace({ client }: Props) {
     if (!dirtyByFileId[fileId]) return;
     if (!loadedByFileId[fileId]) return;
     if (conflictedByFileId[fileId]) return;
+    if (activeFileDetails?.isBinary) return;
 
     const timer = setTimeout(() => {
       void saveFile(fileId);
@@ -216,6 +230,7 @@ export function DocumentWorkspace({ client }: Props) {
     loadedByFileId,
     saveFile,
     versionByFileId,
+    activeFileDetails,
   ]);
 
   useEffect(() => {
@@ -231,6 +246,7 @@ export function DocumentWorkspace({ client }: Props) {
       if (!fileId) return;
       if (!loadedByFileId[fileId]) return;
       if (conflictedByFileId[fileId]) return;
+      if (activeFileDetails?.isBinary) return;
       void saveFile(fileId);
     };
 
@@ -238,7 +254,7 @@ export function DocumentWorkspace({ client }: Props) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [activeFile, conflictedByFileId, loadedByFileId, saveFile]);
+  }, [activeFile, activeFileDetails, conflictedByFileId, loadedByFileId, saveFile]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -268,6 +284,11 @@ export function DocumentWorkspace({ client }: Props) {
           return next;
         });
         setVersionByFileId((previous) => {
+          const next = { ...previous };
+          delete next[event.payload.path];
+          return next;
+        });
+        setFileDetailsByFileId((previous) => {
           const next = { ...previous };
           delete next[event.payload.path];
           return next;
@@ -395,6 +416,7 @@ export function DocumentWorkspace({ client }: Props) {
       activeTabId={activeTabId}
       activeFile={activeFile?.kind === 'file' ? activeFile : null}
       draft={activeFileDraft}
+      assetUrl={activeFileAssetUrl}
       dirtyTabIds={dirtyTabIds}
       onSelectTab={handleSelectTab}
       onCloseTab={handleCloseTab}

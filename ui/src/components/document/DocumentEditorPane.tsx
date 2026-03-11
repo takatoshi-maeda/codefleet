@@ -5,6 +5,7 @@ import { useTheme } from '@react-navigation/native';
 
 import { useCodefleetColors } from '../../theme/useCodefleetColors';
 import { DocumentCodeEditor } from './DocumentCodeEditor';
+import { DocumentFilePreview } from './DocumentFilePreview';
 import type { DocumentTreeNode } from './documentTypes';
 
 type Props = {
@@ -12,6 +13,7 @@ type Props = {
   activeTabId: string | null;
   activeFile: DocumentTreeNode | null;
   draft: string;
+  assetUrl: string | null;
   dirtyTabIds: ReadonlySet<string>;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
@@ -28,6 +30,12 @@ function iconNameForNode(node: DocumentTreeNode): keyof typeof Ionicons.glyphMap
   if (node.language === 'image') {
     return 'image-outline';
   }
+  if (node.language === 'video') {
+    return 'videocam-outline';
+  }
+  if (node.language === 'pdf') {
+    return 'document-attach-outline';
+  }
   return 'document-outline';
 }
 
@@ -36,6 +44,7 @@ export function DocumentEditorPane({
   activeTabId,
   activeFile,
   draft,
+  assetUrl,
   dirtyTabIds,
   onSelectTab,
   onCloseTab,
@@ -45,6 +54,11 @@ export function DocumentEditorPane({
   const { dark } = useTheme();
   const [hoveredTabId, setHoveredTabId] = useState<string | null>(null);
   const [hoveredCloseTabId, setHoveredCloseTabId] = useState<string | null>(null);
+  const shouldInlinePreview =
+    activeFile?.language === 'image' ||
+    activeFile?.language === 'video' ||
+    activeFile?.language === 'pdf' ||
+    activeFile?.language === 'binary';
 
   if (!activeFile) {
     return (
@@ -129,16 +143,25 @@ export function DocumentEditorPane({
       </ScrollView>
 
       <View style={styles.editorBody}>
-        <DocumentCodeEditor
-          value={draft}
-          onChange={onChangeDraft}
-          language={activeFile.language ?? 'text'}
-          textColor={colors.text}
-          mutedTextColor={colors.mutedText}
-          backgroundColor={colors.surface}
-          borderColor={colors.surfaceBorder}
-          isDark={dark}
-        />
+        {shouldInlinePreview ? (
+          <DocumentFilePreview
+            assetUrl={assetUrl}
+            language={activeFile.language ?? 'binary'}
+            textColor={colors.text}
+            mutedTextColor={colors.mutedText}
+          />
+        ) : (
+          <DocumentCodeEditor
+            value={draft}
+            onChange={onChangeDraft}
+            language={activeFile.language ?? 'text'}
+            textColor={colors.text}
+            mutedTextColor={colors.mutedText}
+            backgroundColor={colors.surface}
+            borderColor={colors.surfaceBorder}
+            isDark={dark}
+          />
+        )}
       </View>
     </View>
   );

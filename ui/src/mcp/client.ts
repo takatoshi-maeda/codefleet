@@ -118,7 +118,7 @@ export type DocumentTreeNode = {
   path: string;
   kind: 'file' | 'folder';
   children?: DocumentTreeNode[];
-  language?: 'markdown' | 'python' | 'text' | 'image';
+  language?: 'markdown' | 'python' | 'text' | 'image' | 'video' | 'pdf' | 'binary';
 };
 
 export type DocumentTreeResult = {
@@ -129,11 +129,13 @@ export type DocumentTreeResult = {
 export type DocumentFileResult = {
   path: string;
   name: string;
-  language: 'markdown' | 'python' | 'text' | 'image';
-  content: string;
+  language: 'markdown' | 'python' | 'text' | 'image' | 'video' | 'pdf' | 'binary';
+  content: string | null;
   version: string;
   updatedAt: string;
   updatedBy?: DocumentActor | null;
+  mimeType: string;
+  isBinary: boolean;
 };
 
 export type DocumentWatchEvent =
@@ -207,6 +209,7 @@ export type CodefleetClient = {
       onEvent?: (event: DocumentWatchEvent) => void;
     },
   ): Promise<void>;
+  getDocumentAssetUrl(path: string): string;
 };
 
 type CreateCodefleetMcpClientOptions = {
@@ -257,6 +260,7 @@ function getEndpoints(baseUrl: string, agentName: string) {
     status: `${normalized}/api/codefleet/status`,
     documentsTree: `${normalized}/api/codefleet/documents/tree`,
     documentFile: `${normalized}/api/codefleet/documents/file`,
+    documentAsset: `${normalized}/api/codefleet/documents/asset`,
     documentsWatch: `${normalized}/api/codefleet/documents/watch`,
   } as const;
 }
@@ -710,6 +714,10 @@ export function createCodefleetMcpClient(
       } finally {
         reader.releaseLock();
       }
+    },
+    getDocumentAssetUrl(path) {
+      const endpoint = getEndpoints(buildConfig().baseUrl, agentName).documentAsset;
+      return `${endpoint}?path=${encodeURIComponent(path)}`;
     },
   };
 }

@@ -25,6 +25,12 @@ function iconNameForNode(node: DocumentTreeNode): keyof typeof Ionicons.glyphMap
   if (node.language === 'image') {
     return 'image-outline';
   }
+  if (node.language === 'video') {
+    return 'videocam-outline';
+  }
+  if (node.language === 'pdf') {
+    return 'document-attach-outline';
+  }
   return 'document-outline';
 }
 

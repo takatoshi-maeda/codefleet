@@ -355,6 +355,26 @@ function registerDocumentRoutes(
     }
   });
 
+  app.get("/api/codefleet/documents/asset", async (c) => {
+    const documentPath = c.req.query("path");
+    if (!documentPath) {
+      return c.json({ error: "query path is required" }, 400);
+    }
+    try {
+      const payload = await documentService.readFile(documentPath);
+      const buffer = await documentService.readFileBuffer(documentPath);
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": payload.mimeType,
+          "Cache-Control": "no-store",
+          "Content-Disposition": `inline; filename="${payload.name}"`,
+        },
+      });
+    } catch (error) {
+      return mapDocumentHttpError(error);
+    }
+  });
+
   app.put("/api/codefleet/documents/file", async (c) => {
     const body = (await c.req.json().catch(() => null)) as
       | {
