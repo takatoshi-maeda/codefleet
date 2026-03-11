@@ -12,7 +12,7 @@ import { useOptionalStandaloneThemePreference } from './theme/StandaloneThemePre
 import { useCodefleetColors } from './theme/useCodefleetColors';
 
 const WIDE_BREAKPOINT = 768;
-const SCREEN_TABS = ['document', 'board'] as const;
+const SCREEN_TABS = ['assistant', 'document', 'board'] as const;
 
 type ScreenTab = (typeof SCREEN_TABS)[number];
 
@@ -59,7 +59,7 @@ export default function CodefleetScreen({
   const [fleetPeers, setFleetPeers] = useState<FleetPeerNode[]>([]);
   const [isPeerMenuOpen, setIsPeerMenuOpen] = useState(false);
   const [fleetEndpoint, setFleetEndpoint] = useState(() => normalizeEndpoint(endpointStore.get()));
-  const [activeTab, setActiveTab] = useState<ScreenTab>('document');
+  const [activeTab, setActiveTab] = useState<ScreenTab>('assistant');
   const sessionSlide = useRef(new Animated.Value(isSessionOpen ? 0 : 1)).current;
   const previousSessionOpen = useRef(isSessionOpen);
 
@@ -174,6 +174,7 @@ export default function CodefleetScreen({
   );
 
   const canSwitchPeer = fleetPeers.length > 0;
+  const isAssistantTabActive = activeTab === 'assistant';
   const isBoardTabActive = activeTab === 'board';
   const navigation = chrome?.renderNavigation?.({
     orientation: isWide ? 'vertical' : 'horizontal',
@@ -240,7 +241,7 @@ export default function CodefleetScreen({
                   { color: isActive ? colors.tint : colors.mutedText },
                 ]}
               >
-                {tab === 'document' ? 'Document' : 'Board'}
+                {tab === 'assistant' ? 'Assistant' : tab === 'document' ? 'Document' : 'Board'}
               </Text>
             </Pressable>
           );
@@ -320,7 +321,9 @@ export default function CodefleetScreen({
             </View>
             <View style={styles.contentRow}>
               <View style={styles.boardContainer}>
-                {isBoardTabActive ? (
+                {isAssistantTabActive ? (
+                  renderSessionPane()
+                ) : isBoardTabActive ? (
                   <Board
                     client={client}
                     key={`board:${fleetEndpoint}`}
@@ -401,7 +404,9 @@ export default function CodefleetScreen({
             </View>
           </View>
           {navigation}
-          {isBoardTabActive ? (
+          {isAssistantTabActive ? (
+            renderSessionPane()
+          ) : isBoardTabActive ? (
             <Board
               client={client}
               key={`board:${fleetEndpoint}`}

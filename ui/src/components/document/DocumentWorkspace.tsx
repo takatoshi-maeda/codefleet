@@ -9,14 +9,13 @@ import type {
   DocumentWatchEvent,
 } from '../../mcp/client';
 import { useCodefleetColors } from '../../theme/useCodefleetColors';
-import { ThreadPane } from '../ThreadPane';
 import { DocumentEditorPane } from './DocumentEditorPane';
 import { DocumentExplorerPane } from './DocumentExplorerPane';
 import type { DocumentTreeNode } from './documentTypes';
 
 const MOBILE_BREAKPOINT = 768;
 const TABLET_BREAKPOINT = 1120;
-const MOBILE_PANES = ['explorer', 'editor', 'frontdesk'] as const;
+const MOBILE_PANES = ['explorer', 'editor'] as const;
 const SAVE_DEBOUNCE_MS = 700;
 
 type MobilePane = (typeof MOBILE_PANES)[number];
@@ -424,8 +423,6 @@ export function DocumentWorkspace({ client }: Props) {
     />
   );
 
-  const frontDeskPane = <ThreadPane client={client} />;
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {errorMessage ? (
@@ -477,9 +474,7 @@ export function DocumentWorkspace({ client }: Props) {
           <View style={styles.mobilePane}>
             {mobilePane === 'explorer'
               ? explorerPane
-              : mobilePane === 'editor'
-                ? editorPane
-                : frontDeskPane}
+              : editorPane}
           </View>
         </View>
       ) : (
@@ -488,9 +483,6 @@ export function DocumentWorkspace({ client }: Props) {
             {explorerPane}
           </View>
           <View style={styles.editorColumn}>{editorPane}</View>
-          <View style={[styles.chatColumn, isTablet ? styles.chatColumnTablet : styles.chatColumnDesktop]}>
-            {frontDeskPane}
-          </View>
         </View>
       )}
     </View>
@@ -536,15 +528,6 @@ const styles = StyleSheet.create({
   },
   editorColumn: {
     flex: 1,
-  },
-  chatColumn: {
-    minWidth: 280,
-  },
-  chatColumnTablet: {
-    width: 300,
-  },
-  chatColumnDesktop: {
-    width: 340,
   },
   mobileLayout: {
     flex: 1,
