@@ -111,6 +111,84 @@ describe("McpApiServer", () => {
     }
   });
 
+  it("serves document tree/file APIs and emits document watch updates", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-docs-"));
+    const docsRoot = path.join(tempDir, "docs/spec");
+    const firstDocPath = path.join(docsRoot, "requirements.md");
+    await fs.mkdir(docsRoot, { recursive: true });
+    await fs.writeFile(firstDocPath, "# Requirements\n", "utf8");
+
+    const port = 40100 + Math.floor(Math.random() * 1000);
+    const server = new McpApiServer({
+      host: "127.0.0.1",
+      port,
+      dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
+      documentsWorkspaceRootDir: tempDir,
+      frontDesk: {
+        ...createFrontDeskMockConfig(),
+        fileToolWorkingDir: tempDir,
+      },
+    });
+
+    try {
+      await server.start();
+
+      const treeResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/documents/tree`);
+      expect(treeResponse.status).toBe(200);
+      const treeJson = (await treeResponse.json()) as {
+        root?: Array<{ path?: string; children?: Array<{ path?: string }> }>;
+      };
+      expect(treeJson.root?.[0]?.path).toBe("docs/spec");
+      expect(treeJson.root?.[0]?.children?.some((child) => child.path === "docs/spec/requirements.md")).toBe(true);
+
+      const fileResponse = await fetch(
+        `http://127.0.0.1:${port}/api/codefleet/documents/file?path=${encodeURIComponent("docs/spec/requirements.md")}`,
+      );
+      expect(fileResponse.status).toBe(200);
+      const fileJson = (await fileResponse.json()) as { content?: string; version?: string };
+      expect(fileJson.content).toContain("# Requirements");
+      expect(String(fileJson.version ?? "")).toContain("sha256:");
+
+      const watchResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/documents/watch`, {
+        headers: { accept: "text/event-stream" },
+      });
+      expect(watchResponse.status).toBe(200);
+      expect(watchResponse.headers.get("content-type")).toContain("text/event-stream");
+      const watchReader = createSseReader(watchResponse);
+      const snapshotBody = await readSseReaderChunks(watchReader, 1);
+      expect(snapshotBody).toContain("event: document.snapshot");
+      expect(snapshotBody).toContain("\"rootDir\":\"docs/spec\"");
+
+      const updateResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/documents/file`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          path: "docs/spec/requirements.md",
+          content: "# Requirements\nupdated\n",
+          baseVersion: fileJson.version,
+          actor: { type: "user", id: "browser-test" },
+        }),
+      });
+      expect(updateResponse.status).toBe(200);
+      const updatedJson = (await updateResponse.json()) as { content?: string; version?: string };
+      expect(updatedJson.content).toContain("updated");
+      expect(updatedJson.version).not.toBe(fileJson.version);
+
+      const changedBody = await readSseReaderUntil(watchReader, "\"path\":\"docs/spec/requirements.md\"");
+      expect(changedBody).toContain("event: document.changed");
+      expect(changedBody).toContain("\"path\":\"docs/spec/requirements.md\"");
+
+      await fs.writeFile(path.join(docsRoot, "external.md"), "# External\n", "utf8");
+      const externalBody = await readSseReaderUntil(watchReader, "\"path\":\"docs/spec/external.md\"");
+      expect(externalBody).toContain("\"path\":\"docs/spec/external.md\"");
+      await watchReader.cancel();
+    } finally {
+      await server.stop();
+    }
+  });
+
   it("serves backlog tools via tools/call bridge with success and domain errors", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-backlog-"));
     const backlogDir = path.join(tempDir, ".codefleet/data/backlog");
@@ -599,6 +677,8 @@ describe("McpApiServer", () => {
         "feedback_note_list",
         "ListDirectory",
         "ReadFile",
+        "WriteFile",
+        "MakeDirectory",
       ]);
     } finally {
       await server.stop();
@@ -627,6 +707,47 @@ async function readSseChunks(response: Response, chunkCount: number): Promise<st
     await reader.cancel();
   }
   return chunks;
+}
+
+function createSseReader(response: Response) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("response.body reader unavailable");
+  }
+  return reader;
+}
+
+async function readSseReaderChunks(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  chunkCount: number,
+): Promise<string> {
+  const decoder = new TextDecoder();
+  let chunks = "";
+  let reads = 0;
+  while (reads < chunkCount) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    chunks += decoder.decode(value, { stream: true });
+    reads += 1;
+  }
+  return chunks;
+}
+
+async function readSseReaderUntil(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  pattern: string,
+  maxReads: number = 20,
+): Promise<string> {
+  let collected = "";
+  for (let index = 0; index < maxReads; index += 1) {
+    collected += await readSseReaderChunks(reader, 1);
+    if (collected.includes(pattern)) {
+      return collected;
+    }
+  }
+  throw new Error(`pattern not found in SSE stream: ${pattern}`);
 }
 
 async function callTool(port: number, tool: string, args: Record<string, unknown>) {

@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ZodType } from "zod";
 import type { BacklogService } from "../domain/backlog/backlog-service.js";
+import { DEFAULT_DOCUMENTS_ROOT_DIR } from "../domain/documents/document-service.js";
 import { createBacklogAgentTools } from "./tools/backlog-agent-tools.js";
 import { createFeedbackNoteAgentTools } from "./tools/feedback-note-agent-tools.js";
 import type { FeedbackNoteEventPublisher } from "./tools/feedback-note-agent-tools.js";
@@ -122,13 +123,18 @@ export function resolveCodefleetFrontDeskRuntimeConfig(
 }
 
 function createFrontDeskFileReadTools(workingDir: string) {
-  const fileTools = createFileTools({ workingDir });
+  const fileTools = createFileTools({
+    workingDir,
+    allowedPaths: [DEFAULT_DOCUMENTS_ROOT_DIR],
+  });
   const listDirectory = fileTools.find((tool) => tool.name === "ListDirectory");
   const readFile = fileTools.find((tool) => tool.name === "ReadFile");
-  if (!listDirectory || !readFile) {
+  const writeFile = fileTools.find((tool) => tool.name === "WriteFile");
+  const makeDirectory = fileTools.find((tool) => tool.name === "MakeDirectory");
+  if (!listDirectory || !readFile || !writeFile || !makeDirectory) {
     throw new Error("front-desk file tools are unavailable");
   }
-  return [listDirectory, readFile];
+  return [listDirectory, readFile, writeFile, makeDirectory];
 }
 
 function createFrontDeskPromptLoader(): MarkdownPromptLoader {

@@ -7,7 +7,9 @@ import type { DocumentTreeNode } from './documentTypes';
 type Props = {
   tree: DocumentTreeNode[];
   selectedTreeNodeId: string | null;
+  collapsedFolderIds: ReadonlySet<string>;
   onSelectTreeNode: (node: DocumentTreeNode) => void;
+  onToggleFolder: (node: DocumentTreeNode) => void;
 };
 
 function iconNameForNode(node: DocumentTreeNode): keyof typeof Ionicons.glyphMap {
@@ -30,24 +32,48 @@ type TreeRowProps = {
   node: DocumentTreeNode;
   depth: number;
   selectedTreeNodeId: string | null;
+  collapsedFolderIds: ReadonlySet<string>;
   onSelectTreeNode: (node: DocumentTreeNode) => void;
+  onToggleFolder: (node: DocumentTreeNode) => void;
 };
 
-function TreeRow({ node, depth, selectedTreeNodeId, onSelectTreeNode }: TreeRowProps) {
+function TreeRow({
+  node,
+  depth,
+  selectedTreeNodeId,
+  collapsedFolderIds,
+  onSelectTreeNode,
+  onToggleFolder,
+}: TreeRowProps) {
   const colors = useCodefleetColors();
   const isSelected = selectedTreeNodeId === node.id;
   const children = node.children ?? [];
+  const isCollapsed = node.kind === 'folder' && collapsedFolderIds.has(node.id);
 
   return (
     <View>
       <Pressable
-        onPress={() => onSelectTreeNode(node)}
+        onPress={() => {
+          onSelectTreeNode(node);
+          if (node.kind === 'folder') {
+            onToggleFolder(node);
+          }
+        }}
         style={[
           styles.treeRow,
           { paddingLeft: 14 + depth * 16 },
           isSelected && { backgroundColor: colors.surfaceSelected, borderColor: colors.tint },
         ]}
       >
+        {node.kind === 'folder' ? (
+          <Ionicons
+            name={isCollapsed ? 'chevron-forward' : 'chevron-down'}
+            size={12}
+            color={colors.mutedText}
+          />
+        ) : (
+          <View style={styles.chevronSpacer} />
+        )}
         <Ionicons
           name={iconNameForNode(node)}
           size={14}
@@ -57,14 +83,16 @@ function TreeRow({ node, depth, selectedTreeNodeId, onSelectTreeNode }: TreeRowP
           {node.name}
         </Text>
       </Pressable>
-      {node.kind === 'folder'
+      {node.kind === 'folder' && !isCollapsed
         ? children.map((child) => (
             <TreeRow
               key={child.id}
               node={child}
               depth={depth + 1}
               selectedTreeNodeId={selectedTreeNodeId}
+              collapsedFolderIds={collapsedFolderIds}
               onSelectTreeNode={onSelectTreeNode}
+              onToggleFolder={onToggleFolder}
             />
           ))
         : null}
@@ -75,7 +103,9 @@ function TreeRow({ node, depth, selectedTreeNodeId, onSelectTreeNode }: TreeRowP
 export function DocumentExplorerPane({
   tree,
   selectedTreeNodeId,
+  collapsedFolderIds,
   onSelectTreeNode,
+  onToggleFolder,
 }: Props) {
   const colors = useCodefleetColors();
 
@@ -97,7 +127,9 @@ export function DocumentExplorerPane({
               node={node}
               depth={0}
               selectedTreeNodeId={selectedTreeNodeId}
+              collapsedFolderIds={collapsedFolderIds}
               onSelectTreeNode={onSelectTreeNode}
+              onToggleFolder={onToggleFolder}
             />
           ))}
         </View>
@@ -144,6 +176,10 @@ const styles = StyleSheet.create({
     gap: 8,
     borderLeftWidth: 2,
     borderColor: 'transparent',
+  },
+  chevronSpacer: {
+    width: 12,
+    height: 12,
   },
   treeLabel: {
     flex: 1,

@@ -107,6 +107,71 @@ export type AgentRunResult = {
   errorMessage?: string;
 };
 
+export type DocumentActor = {
+  type: 'user' | 'agent' | 'system' | 'external';
+  id: string;
+};
+
+export type DocumentTreeNode = {
+  id: string;
+  name: string;
+  path: string;
+  kind: 'file' | 'folder';
+  children?: DocumentTreeNode[];
+  language?: 'markdown' | 'python' | 'text' | 'image';
+};
+
+export type DocumentTreeResult = {
+  root: DocumentTreeNode[];
+  updatedAt: string;
+};
+
+export type DocumentFileResult = {
+  path: string;
+  name: string;
+  language: 'markdown' | 'python' | 'text' | 'image';
+  content: string;
+  version: string;
+  updatedAt: string;
+  updatedBy?: DocumentActor | null;
+};
+
+export type DocumentWatchEvent =
+  | {
+      type: 'document.snapshot';
+      payload: {
+        root: DocumentTreeNode[];
+        updatedAt: string;
+        rootDir: string;
+      };
+    }
+  | {
+      type: 'document.changed';
+      payload: {
+        path: string;
+        version: string;
+        updatedAt: string;
+        updatedBy?: DocumentActor | null;
+        change: { kind: 'created' | 'updated' };
+      };
+    }
+  | {
+      type: 'document.deleted';
+      payload: {
+        path: string;
+        updatedAt: string;
+        change: { kind: 'deleted' };
+      };
+    }
+  | {
+      type: 'document.heartbeat';
+      payload: { timestamp: string };
+    }
+  | {
+      type: 'document.error';
+      payload: { message?: string };
+    };
+
 export type CodefleetClient = {
   listBacklogEpics(): Promise<CodefleetEpicListResult>;
   getBacklogEpic(id: string): Promise<CodefleetEpicGetResult>;
@@ -128,6 +193,20 @@ export type CodefleetClient = {
     signal?: AbortSignal;
     onStreamEvent?: (message: JsonRpcNotification) => void;
   }): Promise<AgentRunResult>;
+  listDocumentsTree(): Promise<DocumentTreeResult>;
+  getDocumentFile(path: string): Promise<DocumentFileResult>;
+  saveDocumentFile(args: {
+    path: string;
+    content: string;
+    baseVersion?: string | null;
+    actor?: DocumentActor | null;
+  }): Promise<DocumentFileResult>;
+  watchDocuments(
+    args: {
+      signal?: AbortSignal;
+      onEvent?: (event: DocumentWatchEvent) => void;
+    },
+  ): Promise<void>;
 };
 
 type CreateCodefleetMcpClientOptions = {
@@ -176,7 +255,28 @@ function getEndpoints(baseUrl: string, agentName: string) {
     toolCall: (toolName: string) =>
       `${normalized}/api/mcp/${agentName}/tools/call/${toolName}`,
     status: `${normalized}/api/codefleet/status`,
+    documentsTree: `${normalized}/api/codefleet/documents/tree`,
+    documentFile: `${normalized}/api/codefleet/documents/file`,
+    documentsWatch: `${normalized}/api/codefleet/documents/watch`,
   } as const;
+}
+
+function parseSseBlock(block: string): { event: string; data: string | null } | null {
+  let eventName = 'message';
+  const dataLines: string[] = [];
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) {
+      eventName = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+  return {
+    event: eventName,
+    data: dataLines.length > 0 ? dataLines.join('\n') : null,
+  };
 }
 
 async function sendNotification(
@@ -526,6 +626,90 @@ export function createCodefleetMcpClient(
         buildConfig(),
         'stream',
       );
+    },
+    async listDocumentsTree() {
+      const response = await fetch(getEndpoints(buildConfig().baseUrl, agentName).documentsTree, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return (await response.json()) as DocumentTreeResult;
+    },
+    async getDocumentFile(path) {
+      const endpoint = getEndpoints(buildConfig().baseUrl, agentName).documentFile;
+      const response = await fetch(`${endpoint}?path=${encodeURIComponent(path)}`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || `HTTP ${response.status}`);
+      }
+      return (await response.json()) as DocumentFileResult;
+    },
+    async saveDocumentFile(args) {
+      const response = await fetch(getEndpoints(buildConfig().baseUrl, agentName).documentFile, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(args),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        throw new Error(payload.error || `HTTP ${response.status}`);
+      }
+      return (await response.json()) as DocumentFileResult;
+    },
+    async watchDocuments(args) {
+      const response = await fetch(getEndpoints(buildConfig().baseUrl, agentName).documentsWatch, {
+        headers: {
+          Accept: 'text/event-stream',
+        },
+        signal: args.signal,
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const body = response.body;
+      if (!body) {
+        throw new Error('Document watch stream was not available.');
+      }
+
+      const reader = body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          let boundaryIndex = buffer.indexOf('\n\n');
+          while (boundaryIndex >= 0) {
+            const block = buffer.slice(0, boundaryIndex);
+            buffer = buffer.slice(boundaryIndex + 2);
+            const parsed = parseSseBlock(block);
+            if (!parsed?.data) {
+              boundaryIndex = buffer.indexOf('\n\n');
+              continue;
+            }
+            try {
+              args.onEvent?.({
+                type: parsed.event as DocumentWatchEvent['type'],
+                payload: JSON.parse(parsed.data) as DocumentWatchEvent['payload'],
+              } as DocumentWatchEvent);
+            } catch {
+              // Ignore malformed events so a single bad frame does not kill the stream.
+            }
+            boundaryIndex = buffer.indexOf('\n\n');
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
     },
   };
 }

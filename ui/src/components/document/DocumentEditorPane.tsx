@@ -12,6 +12,7 @@ type Props = {
   activeTabId: string | null;
   activeFile: DocumentTreeNode | null;
   draft: string;
+  dirtyTabIds: ReadonlySet<string>;
   onSelectTab: (tabId: string) => void;
   onCloseTab: (tabId: string) => void;
   onChangeDraft: (next: string) => void;
@@ -35,6 +36,7 @@ export function DocumentEditorPane({
   activeTabId,
   activeFile,
   draft,
+  dirtyTabIds,
   onSelectTab,
   onCloseTab,
   onChangeDraft,
@@ -78,6 +80,7 @@ export function DocumentEditorPane({
           const isHovered = hoveredTabId === tab.id;
           const isCloseHovered = hoveredCloseTabId === tab.id;
           const isCloseVisible = isHovered || isCloseHovered;
+          const isDirty = dirtyTabIds.has(tab.id);
           return (
             <Pressable
               key={tab.id}
@@ -91,6 +94,13 @@ export function DocumentEditorPane({
                 isActive && { borderBottomColor: colors.tint },
               ]}
             >
+              {isDirty ? (
+                <Text style={[styles.dirtyIndicator, { color: isActive ? colors.tint : colors.mutedText }]}>
+                  *
+                </Text>
+              ) : (
+                <View style={styles.dirtyIndicatorSpacer} />
+              )}
               <Ionicons
                 name={iconNameForNode(tab)}
                 size={14}
@@ -185,6 +195,17 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 13,
     fontWeight: '600',
+  },
+  dirtyIndicator: {
+    width: 8,
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 16,
+    textAlign: 'center',
+  },
+  dirtyIndicatorSpacer: {
+    width: 8,
+    height: 16,
   },
   closeButton: {
     width: 18,

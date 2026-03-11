@@ -11,6 +11,13 @@ import { AgentEventQueueService } from "../../domain/events/agent-event-queue-se
 import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/front-desk.js";
 import type { FeedbackNoteEventPublisher } from "../../agents/tools/feedback-note-agent-tools.js";
 import { LocalProcessRegistry, resolveProjectIdFromGitRemote } from "../../domain/fleet/local-process-registry.js";
+import {
+  DEFAULT_DOCUMENTS_ROOT_DIR,
+  DocumentConflictError,
+  DocumentService,
+  type DocumentActor,
+} from "../../domain/documents/document-service.js";
+import { DocumentEventBus, type DocumentWatchEvent } from "../../domain/documents/document-event-bus.js";
 import { registerBacklogMcpTools } from "./tools/backlog-tools.js";
 import { registerFleetObservabilityTools } from "./tools/fleet-observability-tools.js";
 import { JsonlMcpToolAuditLogger } from "./tools/mcp-tool-audit-log.js";
@@ -22,6 +29,8 @@ const DEFAULT_TOOL_AUDIT_LOG_PATH = ".codefleet/runtime/mcp/tool-executions.json
 const FRONT_DESK_AGENT_NAME = "codefleet.front-desk";
 const MCP_ALLOWED_ORIGINS = new Set(["http://localhost:8081"]);
 const SERVER_STOP_TIMEOUT_MS = 5_000;
+const DOCUMENT_WATCH_HEARTBEAT_MS = 15_000;
+const DOCUMENT_WATCH_POLL_INTERVAL_MS = 1_000;
 
 export interface McpServerBuildResult {
   app: Hono;
@@ -45,6 +54,8 @@ export interface McpApiServerOptions {
   backlogService?: BacklogService;
   observabilityService?: FleetObservabilityService;
   frontDesk?: CodefleetFrontDeskRuntimeConfig;
+  documentsRootDir?: string;
+  documentsWorkspaceRootDir?: string;
 }
 
 export async function buildMcpServer(options: McpApiServerOptions = {}): Promise<McpServerBuildResult> {
@@ -139,12 +150,18 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   const backlogService = options.backlogService ?? new BacklogService();
   const observabilityService = options.observabilityService ?? new FleetObservabilityService();
   const eventQueueService = new AgentEventQueueService();
+  const documentService = new DocumentService(
+    options.documentsRootDir ?? DEFAULT_DOCUMENTS_ROOT_DIR,
+    options.documentsWorkspaceRootDir ?? process.cwd(),
+  );
+  const documentEventBus = new DocumentEventBus();
   const toolAuditLogger = new JsonlMcpToolAuditLogger(options.toolAuditLogPath ?? DEFAULT_TOOL_AUDIT_LOG_PATH);
   const feedbackNoteEventPublisher = createFeedbackNoteEventPublisher(eventQueueService);
   const frontDeskRuntimeConfig: CodefleetFrontDeskRuntimeConfig = {
     ...(options.frontDesk ?? {}),
     feedbackNoteEventPublisher,
   };
+  registerDocumentRoutes(app, documentService, documentEventBus, eventQueueService);
   const mounts = await mountMcpRoutes(app, {
     basePath: "/api/mcp",
     dataDir,
@@ -206,6 +223,8 @@ export class McpApiServer {
   private readonly backlogService?: BacklogService;
   private readonly observabilityService?: FleetObservabilityService;
   private readonly frontDesk?: CodefleetFrontDeskRuntimeConfig;
+  private readonly documentsRootDir?: string;
+  private readonly documentsWorkspaceRootDir?: string;
 
   constructor(options: McpApiServerOptions = {}) {
     this.host = options.host ?? DEFAULT_HOST;
@@ -217,6 +236,8 @@ export class McpApiServer {
     this.backlogService = options.backlogService;
     this.observabilityService = options.observabilityService;
     this.frontDesk = options.frontDesk;
+    this.documentsRootDir = options.documentsRootDir;
+    this.documentsWorkspaceRootDir = options.documentsWorkspaceRootDir;
   }
 
   async start(): Promise<McpApiServerStatus> {
@@ -233,6 +254,8 @@ export class McpApiServer {
       backlogService: this.backlogService,
       observabilityService: this.observabilityService,
       frontDesk: this.frontDesk,
+      documentsRootDir: this.documentsRootDir,
+      documentsWorkspaceRootDir: this.documentsWorkspaceRootDir,
     });
     try {
       const started = await this.startListening(app, this.preferredPort);
@@ -302,6 +325,243 @@ export class McpApiServer {
         },
       );
       created.once("error", reject);
+    });
+  }
+}
+
+function registerDocumentRoutes(
+  app: Hono,
+  documentService: DocumentService,
+  documentEventBus: DocumentEventBus,
+  eventQueueService: Pick<AgentEventQueueService, "enqueueToRunningAgents">,
+): void {
+  app.get("/api/codefleet/documents/tree", async (c) => {
+    const payload = await documentService.listTree();
+    c.header("Cache-Control", "no-store");
+    return c.json(payload);
+  });
+
+  app.get("/api/codefleet/documents/file", async (c) => {
+    const documentPath = c.req.query("path");
+    if (!documentPath) {
+      return c.json({ error: "query path is required" }, 400);
+    }
+    try {
+      const payload = await documentService.readFile(documentPath);
+      c.header("Cache-Control", "no-store");
+      return c.json(payload);
+    } catch (error) {
+      return mapDocumentHttpError(error);
+    }
+  });
+
+  app.put("/api/codefleet/documents/file", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as
+      | {
+          path?: unknown;
+          content?: unknown;
+          baseVersion?: unknown;
+          actor?: unknown;
+        }
+      | null;
+    if (!body || typeof body.path !== "string" || typeof body.content !== "string") {
+      return c.json({ error: "path and content are required" }, 400);
+    }
+
+    const actor = normalizeDocumentActor(body.actor);
+    try {
+      const payload = await documentService.writeFile({
+        path: body.path,
+        content: body.content,
+        baseVersion: typeof body.baseVersion === "string" ? body.baseVersion : null,
+        actor,
+      });
+      documentEventBus.publish({
+        type: "document.changed",
+        payload: {
+          path: payload.path,
+          version: payload.version,
+          updatedAt: payload.updatedAt,
+          updatedBy: actor,
+          change: { kind: "updated" },
+        },
+      });
+      await eventQueueService.enqueueToRunningAgents({ type: "docs.update", paths: [payload.path] });
+      c.header("Cache-Control", "no-store");
+      return c.json(payload);
+    } catch (error) {
+      return mapDocumentHttpError(error);
+    }
+  });
+
+  app.get("/api/codefleet/documents/watch", async (c) => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        let closed = false;
+        let previousIndex: Map<string, { version: string; updatedAt: string; size: number }> | null = null;
+
+        const sendEvent = (eventName: string, payload: Record<string, unknown>) => {
+          if (closed) {
+            return;
+          }
+          controller.enqueue(encoder.encode(`event: ${eventName}\ndata: ${JSON.stringify(payload)}\n\n`));
+        };
+
+        const close = () => {
+          if (closed) {
+            return;
+          }
+          closed = true;
+          unsubscribe();
+          clearInterval(heartbeatTimer);
+          clearInterval(pollTimer);
+          controller.close();
+        };
+
+        const sendInitialSnapshot = async () => {
+          const [tree, index] = await Promise.all([documentService.listTree(), documentService.listIndex()]);
+          sendEvent("document.snapshot", {
+            root: tree.root,
+            updatedAt: tree.updatedAt,
+            rootDir: documentService.getRootDir(),
+          });
+          previousIndex = index;
+        };
+
+        const pollForChanges = async () => {
+          const nextIndex = await documentService.listIndex();
+          if (previousIndex) {
+            publishIndexDiff(previousIndex, nextIndex, documentEventBus);
+          }
+          previousIndex = nextIndex;
+        };
+
+        const unsubscribe = documentEventBus.subscribe((event) => {
+          sendDocumentWatchEvent(sendEvent, event);
+        });
+        const heartbeatTimer = setInterval(() => {
+          sendEvent("document.heartbeat", { timestamp: new Date().toISOString() });
+        }, DOCUMENT_WATCH_HEARTBEAT_MS);
+        const pollTimer = setInterval(() => {
+          void pollForChanges().catch(() => {
+            sendEvent("document.error", { message: "failed to refresh document watch state" });
+          });
+        }, DOCUMENT_WATCH_POLL_INTERVAL_MS);
+
+        void sendInitialSnapshot().catch(() => {
+          sendEvent("document.error", { message: "failed to load initial document snapshot" });
+        });
+
+        c.req.raw.signal.addEventListener("abort", close, { once: true });
+      },
+      cancel() {
+        return undefined;
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-store",
+        Connection: "keep-alive",
+      },
+    });
+  });
+}
+
+function mapDocumentHttpError(error: unknown): Response {
+  if (error instanceof DocumentConflictError) {
+    return Response.json(
+      {
+        error: error.message,
+        code: error.code,
+        expectedVersion: error.expectedVersion,
+        actualVersion: error.actualVersion,
+      },
+      { status: 409 },
+    );
+  }
+  const err = error as NodeJS.ErrnoException;
+  if (err?.code === "ENOENT") {
+    return Response.json({ error: "document not found" }, { status: 404 });
+  }
+  return Response.json(
+    { error: error instanceof Error ? error.message : String(error) },
+    { status: 400 },
+  );
+}
+
+function normalizeDocumentActor(candidate: unknown): DocumentActor | null {
+  if (!candidate || typeof candidate !== "object") {
+    return null;
+  }
+  const record = candidate as { type?: unknown; id?: unknown };
+  if (
+    (record.type === "user" || record.type === "agent" || record.type === "system" || record.type === "external")
+    && typeof record.id === "string"
+    && record.id.trim().length > 0
+  ) {
+    return {
+      type: record.type,
+      id: record.id.trim(),
+    };
+  }
+  return null;
+}
+
+function sendDocumentWatchEvent(
+  sendEvent: (eventName: string, payload: Record<string, unknown>) => void,
+  event: DocumentWatchEvent,
+): void {
+  sendEvent(event.type, event.payload);
+}
+
+function publishIndexDiff(
+  previousIndex: Map<string, { version: string; updatedAt: string; size: number }>,
+  nextIndex: Map<string, { version: string; updatedAt: string; size: number }>,
+  bus: DocumentEventBus,
+): void {
+  for (const [documentPath, next] of nextIndex.entries()) {
+    const previous = previousIndex.get(documentPath);
+    if (!previous) {
+      bus.publish({
+        type: "document.changed",
+        payload: {
+          path: documentPath,
+          version: next.version,
+          updatedAt: next.updatedAt,
+          updatedBy: null,
+          change: { kind: "created" },
+        },
+      });
+      continue;
+    }
+    if (previous.version !== next.version || previous.updatedAt !== next.updatedAt || previous.size !== next.size) {
+      bus.publish({
+        type: "document.changed",
+        payload: {
+          path: documentPath,
+          version: next.version,
+          updatedAt: next.updatedAt,
+          updatedBy: null,
+          change: { kind: "updated" },
+        },
+      });
+    }
+  }
+
+  for (const [documentPath, previous] of previousIndex.entries()) {
+    if (nextIndex.has(documentPath)) {
+      continue;
+    }
+    bus.publish({
+      type: "document.deleted",
+      payload: {
+        path: documentPath,
+        updatedAt: previous.updatedAt,
+        change: { kind: "deleted" },
+      },
     });
   }
 }
