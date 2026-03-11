@@ -9,6 +9,7 @@ import type {
   DocumentWatchEvent,
 } from '../../mcp/client';
 import { useCodefleetColors } from '../../theme/useCodefleetColors';
+import { findDefaultDocumentFileId } from './documentDefaultSelection';
 import { DocumentEditorPane } from './DocumentEditorPane';
 import { DocumentExplorerPane } from './DocumentExplorerPane';
 import type { DocumentTreeNode } from './documentTypes';
@@ -194,11 +195,11 @@ export function DocumentWorkspace({ client }: Props) {
 
   useEffect(() => {
     if (selectedTreeNodeId || fileNodes.length === 0) return;
-    const firstFileId = fileNodes[0]?.id ?? null;
-    setSelectedTreeNodeId(firstFileId);
-    setActiveTabId(firstFileId);
-    setOpenTabIds(firstFileId ? [firstFileId] : []);
-  }, [fileNodes, selectedTreeNodeId]);
+    const defaultFileId = findDefaultDocumentFileId(tree, collapsedFolderIds);
+    setSelectedTreeNodeId(defaultFileId);
+    setActiveTabId(defaultFileId);
+    setOpenTabIds(defaultFileId ? [defaultFileId] : []);
+  }, [collapsedFolderIds, fileNodes.length, selectedTreeNodeId, tree]);
 
   useEffect(() => {
     const activeFileId = activeFile?.kind === "file" ? activeFile.id : null;
