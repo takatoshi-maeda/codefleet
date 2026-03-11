@@ -21,12 +21,6 @@ import { ClaudeAgentSdkRuntime } from "../../infra/agent-runtime/claude-agent-sd
 import { AppServerClient } from "../../infra/appserver/app-server-client.js";
 import { BacklogPoller } from "../../events/watchers/backlog-poller.js";
 import {
-  assertDocsUpdateSubmoduleIsValid,
-  DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_MS,
-  DocsUpdateSubmoduleWatcher,
-  resolveDocsUpdateSubmodulePaths,
-} from "../../events/watchers/docs-update-submodule-watcher.js";
-import {
   diagnoseAgentRuntimeConsoleLog,
   formatAgentRuntimeConsoleLog,
   formatAgentRuntimeEventLog,
@@ -141,7 +135,6 @@ const DOCKER_CGROUP_PATHS = ["/proc/self/cgroup", "/proc/1/cgroup"] as const;
 const DEFAULT_QUEUE_CONSUME_MAX = 50;
 const DEFAULT_QUEUE_POLL_INTERVAL_MS = 1_000;
 const DEFAULT_EPIC_READY_POLL_INTERVAL_MS = 3_000;
-const DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_SEC = DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_MS / 1_000;
 const DEFAULT_PLAYWRIGHT_HOST = "localhost";
 const DEFAULT_PLAYWRIGHT_PORT = 9333;
 const PLAYWRIGHT_READY_TIMEOUT_MS = 10_000;
@@ -154,7 +147,6 @@ const DEBUG_APP_SERVER_EVENTS_ENV_ENABLED =
 type LogMode = "human" | "jsonl";
 const ANSI_RESET = "\u001b[0m";
 const ANSI_BOLD = "\u001b[1m";
-const ANSI_RED = "\u001b[31m";
 const ROLE_COLOR_BY_PREFIX: Record<string, string> = {
   orchestrator: "\u001b[36m",
   gatekeeper: "\u001b[33m",
@@ -258,12 +250,6 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
     .option("--verbose", "Emit verbose JSONL logs for diagnostics")
     .option("--lang <lang>", "Set response language for newly started event threads")
     .option("--epic-ready-poll-interval-sec <seconds>", "Polling interval for backlog epic ready detection", "3")
-    .option("--docs-update-submodule-dir <path>", "Git submodule directory to watch for docs.update auto-trigger")
-    .option(
-      "--docs-update-pull-interval-sec <seconds>",
-      "Polling interval for docs submodule pull-based synchronization",
-      String(DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_SEC),
-    )
     .option("--playwright-host <host>", "Host to bind playwright run-server", DEFAULT_PLAYWRIGHT_HOST)
     .option("--playwright-port <port>", "Port to bind playwright run-server", String(DEFAULT_PLAYWRIGHT_PORT))
     .option("--gatekeepers <count>", "Number of Gatekeeper agents", "1")
@@ -289,43 +275,6 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
         options.epicReadyPollIntervalSec,
         "--epic-ready-poll-interval-sec",
       );
-      const docsUpdatePullIntervalMs = parsePositivePollIntervalMs(
-        options.docsUpdatePullIntervalSec,
-        "--docs-update-pull-interval-sec",
-      );
-      const docsUpdatePaths = resolveDocsUpdateSubmodulePaths({
-        repositoryRoot: process.cwd(),
-        submoduleDir:
-          typeof options.docsUpdateSubmoduleDir === "string" && options.docsUpdateSubmoduleDir.trim().length > 0
-            ? options.docsUpdateSubmoduleDir
-            : undefined,
-      });
-      try {
-        await assertDocsUpdateSubmoduleIsValid(docsUpdatePaths);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        const submoduleDir = docsUpdatePaths.submoduleDir;
-        const submodulePath = docsUpdatePaths.submodulePath;
-        const repositoryRoot = docsUpdatePaths.repositoryRoot;
-        const emphasizedErrorLabel = `${ANSI_BOLD}${ANSI_RED}ERROR${ANSI_RESET}`;
-        const guidance = [
-          `${emphasizedErrorLabel}: docs.update submodule validation failed.`,
-          `  - reason: ${message}`,
-          `  - repository root: ${repositoryRoot}`,
-          `  - target dir: ${submoduleDir}`,
-          `  - target path (relative): ${submodulePath}`,
-          "  - how to fix:",
-          `    1) ensure '${submodulePath}' exists and is a git submodule listed in .gitmodules`,
-          `    2) or pass a valid path with --docs-update-submodule-dir <path>`,
-          `    3) if this project does not use auto docs sync, create/initialize the submodule first`,
-          "",
-          "example:",
-          `  codefleet up --docs-update-submodule-dir ${path.join("docs", "spec")}`,
-        ].join("\n");
-        console.error(guidance);
-        process.exitCode = 1;
-        return;
-      }
       const playwrightHost = parsePlaywrightHost(options.playwrightHost);
       const playwrightPort = parsePlaywrightPort(options.playwrightPort);
       const requestedPlaywrightServerUrl = buildPlaywrightServerUrl(playwrightHost, playwrightPort);
@@ -355,8 +304,6 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
           debugAppServerEvents,
           lang,
           epicReadyPollIntervalMs,
-          docsUpdateSubmoduleDir: docsUpdatePaths.submoduleDir,
-          docsUpdatePullIntervalMs,
           playwrightHost,
           playwrightPort,
         });
@@ -451,8 +398,6 @@ export function createFleetctlCommand(options: FleetctlCommandOptions = {}): Com
       try {
         await waitForShutdownSignal(service, queueWorker, queueService, emit, {
           epicReadyPollIntervalMs,
-          docsUpdateSubmoduleDir: docsUpdatePaths.submoduleDir,
-          docsUpdatePullIntervalMs,
         });
       } finally {
         await removeAgentRuntimeManagerPidFile();
@@ -1087,14 +1032,9 @@ async function waitForShutdownSignal(
   emit: (record: object) => void,
   options: {
     epicReadyPollIntervalMs?: number;
-    docsUpdateSubmoduleDir?: string;
-    docsUpdatePullIntervalMs?: number;
   } = {},
 ): Promise<void> {
   const epicReadyPollIntervalMs = options.epicReadyPollIntervalMs ?? DEFAULT_EPIC_READY_POLL_INTERVAL_MS;
-  const docsUpdatePullIntervalMs =
-    options.docsUpdatePullIntervalMs ?? DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_MS;
-  const docsUpdateSubmoduleDir = options.docsUpdateSubmoduleDir;
   let polling = true;
   let consuming = false;
   const backlogService = new BacklogService();
@@ -1250,34 +1190,6 @@ async function waitForShutdownSignal(
   );
   backlogPoller.start();
 
-  const docsUpdateWatcher = new DocsUpdateSubmoduleWatcher({
-    repositoryRoot: process.cwd(),
-    ...(docsUpdateSubmoduleDir ? { submoduleDir: docsUpdateSubmoduleDir } : {}),
-    pullIntervalMs: docsUpdatePullIntervalMs,
-    sink: {
-      publish: async (event) => {
-        const enqueueResult = await queueService.enqueueToRunningAgents(event);
-        if (enqueueResult.enqueuedAgentIds.length === 0) {
-          return;
-        }
-        emit({
-          ts: new Date().toISOString(),
-          level: "info",
-          event: "fleet.event.enqueued",
-          source: "docs-update-submodule-watcher",
-          sourceEventType: event.type,
-          enqueuedAgentIds: enqueueResult.enqueuedAgentIds,
-        });
-      },
-    },
-    logger: {
-      emit: (record) => {
-        emit(record);
-      },
-    },
-  });
-  docsUpdateWatcher.start();
-
   await new Promise<void>((resolve) => {
     const watchedSignals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
     const shutdownSignalTracker: ShutdownSignalTracker = { requestedAtMs: null };
@@ -1286,7 +1198,6 @@ async function waitForShutdownSignal(
       polling = false;
       clearInterval(queueTimer);
       backlogPoller.stop();
-      docsUpdateWatcher.stop();
       for (const signal of watchedSignals) {
         process.removeListener(signal, onSignal);
       }
@@ -1884,8 +1795,6 @@ async function spawnDetachedAgentRuntimeManagerProcess(input: {
   debugAppServerEvents: boolean;
   lang?: string;
   epicReadyPollIntervalMs: number;
-  docsUpdateSubmoduleDir: string;
-  docsUpdatePullIntervalMs: number;
   playwrightHost: string;
   playwrightPort: number;
   frontendDevelopers: number;
@@ -1916,15 +1825,6 @@ async function spawnDetachedAgentRuntimeManagerProcess(input: {
   }
   if (input.epicReadyPollIntervalMs !== DEFAULT_EPIC_READY_POLL_INTERVAL_MS) {
     args.push("--epic-ready-poll-interval-sec", String(input.epicReadyPollIntervalMs / 1_000));
-  }
-  const resolvedDefaultDocsSubmoduleDir = resolveDocsUpdateSubmodulePaths({
-    repositoryRoot: process.cwd(),
-  }).submoduleDir;
-  if (path.resolve(input.docsUpdateSubmoduleDir) !== path.resolve(resolvedDefaultDocsSubmoduleDir)) {
-    args.push("--docs-update-submodule-dir", input.docsUpdateSubmoduleDir);
-  }
-  if (input.docsUpdatePullIntervalMs !== DEFAULT_DOCS_UPDATE_SUBMODULE_PULL_INTERVAL_MS) {
-    args.push("--docs-update-pull-interval-sec", String(input.docsUpdatePullIntervalMs / 1_000));
   }
   // Parent process already ran the interactive startup preflight.
   args.push("--skip-startup-preflight");

@@ -133,9 +133,21 @@ async function validateQueueMessage(filePath: string): Promise<AgentEventQueueMe
   if (!message.event || typeof message.event.type !== "string") {
     throw new Error("queue message.event.type must be a string");
   }
-  if (message.event.type === "docs.update") {
-    if (!Array.isArray(message.event.paths) || !message.event.paths.every((entry: unknown) => typeof entry === "string")) {
-      throw new Error("queue message.event.paths must be string[] for docs.update");
+  if (message.event.type === "release-plan.create") {
+    if (typeof message.event.path !== "string" || message.event.path.trim().length === 0) {
+      throw new Error("queue message.event.path must be non-empty string for release-plan.create");
+    }
+    if (message.event.path.includes("..")) {
+      throw new Error("queue message.event.path must not contain '..' for release-plan.create");
+    }
+    if (message.event.path.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(message.event.path)) {
+      throw new Error("queue message.event.path must be project-root relative for release-plan.create");
+    }
+    if (!message.event.path.endsWith(".md")) {
+      throw new Error("queue message.event.path must end with .md for release-plan.create");
+    }
+    if (!message.event.path.startsWith(".codefleet/data/release-plan/")) {
+      throw new Error("queue message.event.path must be inside .codefleet/data/release-plan/ for release-plan.create");
     }
   } else if (message.event.type === "source-brief.update") {
     if (typeof message.event.briefPath !== "string" || message.event.briefPath.trim().length === 0) {

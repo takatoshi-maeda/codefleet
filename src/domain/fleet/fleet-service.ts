@@ -724,17 +724,27 @@ function normalizePlaywrightServerUrl(value: string | undefined): string | undef
 }
 
 function buildFollowUpEvent(nextEventType: SystemEvent["type"], sourceEvent: SystemEvent): SystemEvent {
-  if (nextEventType === "docs.update") {
-    return {
-      type: "docs.update",
-      paths: sourceEvent.type === "docs.update" ? [...sourceEvent.paths] : [],
-    };
+  if (nextEventType === "release-plan.create") {
+    const releasePlanPath = sourceEvent.type === "release-plan.create" ? sourceEvent.path : undefined;
+    if (!releasePlanPath) {
+      throw new CodefleetError(
+        "ERR_VALIDATION",
+        "cannot emit release-plan.create without path from source release-plan.create event",
+      );
+    }
+    return { type: "release-plan.create", path: releasePlanPath };
   }
   if (nextEventType === "source-brief.update") {
+    const sourcePaths =
+      sourceEvent.type === "release-plan.create"
+        ? [sourceEvent.path]
+        : sourceEvent.type === "source-brief.update"
+          ? [...sourceEvent.sourcePaths]
+          : [];
     return {
       type: "source-brief.update",
       briefPath: ".codefleet/data/source-brief/latest.md",
-      sourcePaths: sourceEvent.type === "docs.update" ? [...sourceEvent.paths] : [],
+      sourcePaths,
     };
   }
   if (nextEventType === "acceptance-test.update") {

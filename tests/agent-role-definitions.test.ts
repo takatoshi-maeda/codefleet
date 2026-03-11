@@ -15,8 +15,18 @@ describe("agent-role-definitions", () => {
     expect(getAgentRoleDefinition("Gatekeeper").role).toBe("Gatekeeper");
     expect(getAgentRoleDefinition("Reviewer").role).toBe("Reviewer");
 
-    expect(isRoleSubscribedToEvent("Orchestrator", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
-    expect(isRoleSubscribedToEvent("Developer", { type: "docs.update", paths: ["docs/a.md"] })).toBe(false);
+    expect(
+      isRoleSubscribedToEvent("Orchestrator", {
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
+      }),
+    ).toBe(false);
+    expect(
+      isRoleSubscribedToEvent("Developer", {
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
+      }),
+    ).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "acceptance-test.update" })).toBe(false);
     expect(isRoleSubscribedToEvent("Developer", { type: "backlog.epic.ready" })).toBe(true);
     expect(isRoleSubscribedToEvent("FrontendDeveloper", { type: "backlog.epic.frontend.ready", epicId: "E-001" })).toBe(
@@ -34,9 +44,14 @@ describe("agent-role-definitions", () => {
         type: "feedback-note.create",
         path: ".codefleet/data/feedback-notes/01HXTEST0000000000000000.md",
       }),
-    ).toBe(true);
+    ).toBe(false);
     expect(isRoleSubscribedToEvent("Orchestrator", { type: "backlog.update" })).toBe(false);
-    expect(isRoleSubscribedToEvent("Curator", { type: "docs.update", paths: ["docs/a.md"] })).toBe(true);
+    expect(
+      isRoleSubscribedToEvent("Curator", {
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
+      }),
+    ).toBe(true);
     expect(
       isRoleSubscribedToEvent("Gatekeeper", {
         type: "source-brief.update",
@@ -48,11 +63,11 @@ describe("agent-role-definitions", () => {
 
   it("maps trigger events to role task prompts", () => {
     const curator = getAgentRoleDefinition("Curator");
-    const curatorMapped = curator.subscribedEvents["docs.update"];
-    expect(curatorMapped?.triggerEvent).toBe("source-brief.update");
+    const curatorMapped = curator.subscribedEvents["release-plan.create"];
+    expect(curatorMapped?.triggerEvent).toBe("release-plan.create");
 
-    const curatorPrompt = getRoleEventPromptDefinition("Curator", "docs.update");
-    expect(curatorPrompt.promptEventType).toBe("source-brief.update");
+    const curatorPrompt = getRoleEventPromptDefinition("Curator", "release-plan.create");
+    expect(curatorPrompt.promptEventType).toBe("release-plan.create");
     expect(curatorPrompt.emitEventType).toBe("source-brief.update");
 
     const gatekeeper = getAgentRoleDefinition("Gatekeeper");
@@ -71,8 +86,8 @@ describe("agent-role-definitions", () => {
     expect(orchestratorFeedbackPrompt.promptEventType).toBe("feedback-note.create");
     expect(orchestratorFeedbackPrompt.emitEventType).toBeNull();
 
-    const defaultPrompt = getRoleEventPromptDefinition("Developer", "docs.update");
-    expect(defaultPrompt.promptEventType).toBe("docs.update");
+    const defaultPrompt = getRoleEventPromptDefinition("Developer", "release-plan.create");
+    expect(defaultPrompt.promptEventType).toBe("release-plan.create");
     expect(defaultPrompt.emitEventType).toBeNull();
 
     const frontendPrompt = getRoleEventPromptDefinition("FrontendDeveloper", "backlog.epic.frontend.ready");

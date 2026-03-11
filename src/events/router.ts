@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 export type SystemEvent =
-  | { type: "docs.update"; paths: string[] }
+  | { type: "release-plan.create"; path: string }
   | { type: "source-brief.update"; briefPath: string; sourcePaths: string[] }
   | { type: "feedback-note.create"; path: string }
   | { type: "acceptance-test.update" }
@@ -15,7 +15,7 @@ export type SystemEvent =
   | { type: "debug.playwright-test" };
 
 export const SYSTEM_EVENT_TYPES: ReadonlyArray<SystemEvent["type"]> = [
-  "docs.update",
+  "release-plan.create",
   "source-brief.update",
   "feedback-note.create",
   "acceptance-test.update",
@@ -47,26 +47,35 @@ export interface SystemEventCommandDefinition {
 // Keep event CLI registration alongside event type modeling so adding a new
 // SystemEvent naturally forces a trigger command definition in one place.
 export const SYSTEM_EVENT_COMMAND_DEFINITIONS: Record<SystemEvent["type"], SystemEventCommandDefinition> = {
-  "docs.update": {
-    description: "SystemEvent.type=docs.update",
+  "release-plan.create": {
+    description: "SystemEvent.type=release-plan.create",
     options: [
       {
-        key: "paths",
-        flags: "--paths <path>",
-        description: "Updated document path (repeatable/comma-separated)",
+        key: "path",
+        flags: "--path <path>",
+        description: "Project-root relative path to created release plan markdown file",
         required: true,
-        parser: "csv-repeatable",
-        summaryToken: "--paths <path> (repeatable/comma-separated)",
+        summaryToken: "--path <path>",
       },
     ],
     createEvent(parsedOptions) {
-      const paths = Array.isArray(parsedOptions.paths)
-        ? parsedOptions.paths.filter((value): value is string => typeof value === "string" && value.length > 0)
-        : [];
-      if (paths.length === 0) {
-        throw new Error("docs.update: --paths must include at least one path");
+      const path = typeof parsedOptions.path === "string" ? parsedOptions.path.trim() : "";
+      if (path.length === 0) {
+        throw new Error("release-plan.create: --path must be non-empty");
       }
-      return { type: "docs.update", paths };
+      if (path.includes("..")) {
+        throw new Error("release-plan.create: --path must not contain '..'");
+      }
+      if (path.startsWith("/") || /^[a-zA-Z]:[\\/]/u.test(path)) {
+        throw new Error("release-plan.create: --path must be relative to project root");
+      }
+      if (!path.endsWith(".md")) {
+        throw new Error("release-plan.create: --path must end with .md");
+      }
+      if (!path.startsWith(".codefleet/data/release-plan/")) {
+        throw new Error("release-plan.create: --path must be inside .codefleet/data/release-plan/");
+      }
+      return { type: "release-plan.create", path };
     },
   },
   "source-brief.update": {
@@ -322,11 +331,10 @@ export class EventRouter {
   }
 
   private createDedupeKey(event: SystemEvent): string {
-    if (event.type !== "docs.update") {
-      return event.type;
+    if (event.type === "release-plan.create" || event.type === "feedback-note.create") {
+      return `${event.type}:${event.path}`;
     }
-    // Order-independent key avoids duplicate processing when the same path set arrives in a different order.
-    return `${event.type}:${[...event.paths].sort().join("|")}`;
+    return event.type;
   }
 
   private pruneStaleEntries(): void {

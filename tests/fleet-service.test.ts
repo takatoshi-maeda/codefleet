@@ -428,7 +428,7 @@ describe("FleetService", () => {
     await service.dispatchAgentEvent({
       agentId: "curator-1",
       agentRole: "Curator",
-      event: { type: "docs.update", paths: ["docs/spec.md"] },
+      event: { type: "release-plan.create", path: ".codefleet/data/release-plan/plan-a.md" },
     });
     expect(runtime.executed).toHaveLength(1);
     expect(runtime.executed[0]).toMatchObject({
@@ -436,7 +436,7 @@ describe("FleetService", () => {
       role: "Curator",
       responseLanguage: undefined,
     });
-    expect(runtime.executed[0]?.prompt).toContain("docs/spec.md");
+    expect(runtime.executed[0]?.prompt).toContain(".codefleet/data/release-plan/plan-a.md");
     expect(appServer.startedThreads).toEqual([]);
     expect(appServer.startedTurns).toEqual([]);
 
@@ -483,7 +483,7 @@ describe("FleetService", () => {
     expect(logs).toContain("line3");
   });
 
-  it("starts a new thread for curator docs.update and uses event prompt", async () => {
+  it("starts a new thread for curator release-plan.create and uses event prompt", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
     const rolesPath = path.join(tempDir, ".codefleet/roles.json");
     const runtimeDir = path.join(tempDir, ".codefleet/runtime");
@@ -506,13 +506,13 @@ describe("FleetService", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       agentId: "curator-1",
       agentRole: "Curator",
-      event: { type: "docs.update", paths: ["docs/spec.md"] },
-      source: { command: "codefleet trigger docs.update" },
+      event: { type: "release-plan.create", path: ".codefleet/data/release-plan/plan-a.md" },
+      source: { command: "codefleet trigger release-plan.create" },
     });
     expect(emittedEvent).toEqual({
       type: "source-brief.update",
       briefPath: ".codefleet/data/source-brief/latest.md",
-      sourcePaths: ["docs/spec.md"],
+      sourcePaths: [".codefleet/data/release-plan/plan-a.md"],
     });
 
     expect(appServer.startedThreads).toEqual([
@@ -524,8 +524,8 @@ describe("FleetService", () => {
     expect(appServer.startedTurns[0]?.input).toHaveLength(1);
     expect(appServer.startedTurns[0]?.input[0]?.type).toBe("text");
     expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Please take on the role of Curator for this task.");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Updated source documents (from docs.update paths):");
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("docs/spec.md");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain("Created release plan:");
+    expect(appServer.startedTurns[0]?.input[0]?.text).toContain(".codefleet/data/release-plan/plan-a.md");
     expect(appServer.completedTurns).toEqual([
       { agentId: "curator-1", threadId: "curator-1-new-thread", turnId: "curator-1-event-turn" },
     ]);
@@ -579,8 +579,8 @@ describe("FleetService", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
       agentId: "curator-1",
       agentRole: "Curator",
-      event: { type: "docs.update", paths: ["docs/spec.md"] },
-      source: { command: "codefleet trigger docs.update" },
+      event: { type: "release-plan.create", path: ".codefleet/data/release-plan/plan-a.md" },
+      source: { command: "codefleet trigger release-plan.create" },
     });
 
     expect(appServer.startedThreads).toEqual([
@@ -704,7 +704,7 @@ describe("FleetService", () => {
     await service.dispatchAgentEvent({
       agentId: "curator-1",
       agentRole: "Curator",
-      event: { type: "docs.update", paths: ["docs/spec.md"] },
+      event: { type: "release-plan.create", path: ".codefleet/data/release-plan/plan-a.md" },
     });
 
     expect(appServer.startedThreads[0]?.codexConfig).toEqual({
@@ -1249,36 +1249,6 @@ describe("FleetService", () => {
     });
 
     expect(emittedEvent).toEqual({ type: "backlog.update" });
-  });
-
-  it("runs orchestrator feedback-note.create prompt with event.path and no follow-up emit", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-fleet-"));
-    const rolesPath = path.join(tempDir, ".codefleet/roles.json");
-    const runtimeDir = path.join(tempDir, ".codefleet/runtime");
-    const logDir = path.join(tempDir, ".codefleet/logs/agents");
-    await writeRoleRuntimeConfig(tempDir, {
-      Orchestrator: { provider: "codex-app-server", config: {} },
-    });
-    const appServer = new FakeAppServerClient();
-    const service = new FleetService(
-      rolesPath,
-      runtimeDir,
-      logDir,
-      new FakeProcessManager() as never,
-      appServer as never,
-    );
-
-    await service.up();
-    const emittedEvent = await service.dispatchAgentEvent({
-      agentId: "orchestrator-1",
-      agentRole: "Orchestrator",
-      event: { type: "feedback-note.create", path: ".codefleet/data/feedback-notes/01HXTEST0000000000000000.md" },
-    });
-
-    expect(emittedEvent).toBeNull();
-    expect(appServer.startedTurns[0]?.input[0]?.text).toContain(
-      "Feedback note path: .codefleet/data/feedback-notes/01HXTEST0000000000000000.md",
-    );
   });
 
   it("runs before_start and after_complete hooks for the role", async () => {

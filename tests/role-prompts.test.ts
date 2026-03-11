@@ -4,7 +4,7 @@ import { getRoleEventPromptTemplate, getRoleStartupPrompt } from "../src/domain/
 describe("role prompts", () => {
   it("requires Source Brief implementation constraints in curator prompts", async () => {
     const startupPrompt = await getRoleStartupPrompt("Curator");
-    const eventPrompt = await getRoleEventPromptTemplate("Curator", "source-brief.update");
+    const eventPrompt = await getRoleEventPromptTemplate("Curator", "release-plan.create");
 
     expect(startupPrompt).toContain("Implementation Constraints");
     expect(startupPrompt).toContain("reuse it verbatim as implementation guidance");

@@ -5,24 +5,27 @@ import { renderEventPromptTemplate } from "../src/domain/fleet/event-prompt-temp
 describe("event-prompt-template", () => {
   it("renders received parameters directly and via event namespace", () => {
     const rendered = renderEventPromptTemplate(
-      "type={{type}} namespaced={{event.type}} paths={{paths}} nested={{payload.level}}",
+      "type={{type}} namespaced={{event.type}} path={{path}} nested={{payload.level}}",
       {
-        type: "docs.update",
-        paths: ["docs/a.md", "docs/b.md"],
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/plan-a.md",
         payload: { level: "high" },
-        event: { type: "docs.update", paths: ["docs/a.md", "docs/b.md"] },
+        event: { type: "release-plan.create", path: ".codefleet/data/release-plan/plan-a.md" },
       },
     );
 
-    expect(rendered).toContain("type=docs.update");
-    expect(rendered).toContain("namespaced=docs.update");
-    expect(rendered).toContain("paths=docs/a.md, docs/b.md");
+    expect(rendered).toContain("type=release-plan.create");
+    expect(rendered).toContain("namespaced=release-plan.create");
+    expect(rendered).toContain("path=.codefleet/data/release-plan/plan-a.md");
     expect(rendered).toContain("nested=high");
   });
 
   it("throws when template references undefined variables", () => {
     expect(() =>
-      renderEventPromptTemplate("missing={{event.unknown}}", { type: "docs.update", event: { type: "docs.update" } }),
+      renderEventPromptTemplate("missing={{event.unknown}}", {
+        type: "release-plan.create",
+        event: { type: "release-plan.create" },
+      }),
     ).toThrowError(CodefleetError);
   });
 });

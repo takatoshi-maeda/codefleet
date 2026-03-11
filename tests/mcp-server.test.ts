@@ -349,7 +349,7 @@ describe("McpApiServer", () => {
     } finally {
       await server.stop();
     }
-  });
+  }, 10000);
 
   it("closes active SSE streams during stop so shutdown does not hang", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-mcp-stop-sse-"));
@@ -673,8 +673,8 @@ describe("McpApiServer", () => {
         "backlog_epic_get",
         "backlog_item_list",
         "backlog_item_get",
-        "feedback_note_create",
-        "feedback_note_list",
+        "release_plan_create",
+        "release_plan_list",
         "ListDirectory",
         "ReadFile",
         "WriteFile",

@@ -82,7 +82,7 @@ describe("CLI command layout", () => {
     expect(orchestrator).toContain("epic");
     expect(orchestrator).toContain("item");
     expect(orchestrator).toContain(
-      'epic upsert --id E-012 --title "Checkout Revamp" --note "Scope aligned with latest acceptance plan"',
+      'epic upsert --id E-012 --title "Checkout Revamp" --development-scope frontend --note "Scope aligned with latest acceptance plan"',
     );
     expect(orchestrator).toContain(
       'item upsert --id I-104 --epic E-012 --title "Add E2E coverage" --note "Waiting on API contract confirmation"',

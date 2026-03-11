@@ -1,7 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Command } from "commander";
-import { resolveDocsUpdateSubmodulePaths } from "../../events/watchers/docs-update-submodule-watcher.js";
 import type {
   AcceptanceTestCase,
   AcceptanceTestCaseStatus,
@@ -791,12 +790,10 @@ function addAgentsMdViewCommand(cmd: Command): void {
   const agentsMd = cmd.command("agents-md").description("Read project guidance from AGENTS.md");
   agentsMd
     .command("view")
-    .description("Show AGENTS.md from the docsRepository clone root")
+    .description("Show AGENTS.md from the current project root")
     .action(async function handleAgentsMdView() {
-      const { submoduleDir } = resolveDocsUpdateSubmodulePaths({ repositoryRoot: process.cwd() });
-      const agentsMdPath = path.join(submoduleDir, "AGENTS.md");
+      const agentsMdPath = path.join(process.cwd(), "AGENTS.md");
       try {
-        // docsRepository is cloned as the docs submodule, so AGENTS.md is resolved from that clone root.
         const content = await fs.readFile(agentsMdPath, "utf8");
         console.log(content);
       } catch (error: unknown) {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createSupervisorCommand } from "../src/cli/commands/supervisor.js";
 
 describe("supervisor loader propagation", () => {
-  it("passes detached startup args to runner while command is created in test process", async () => {
+  it("passes foreground startup args to runner while command is created in test process", async () => {
     const calls: Array<{ cwd: string; args: string[] }> = [];
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
@@ -24,7 +24,7 @@ describe("supervisor loader propagation", () => {
 
     await command.parseAsync(["up"], { from: "user" });
 
-    expect(calls[0]?.args).toEqual(["up", "--detached", "--skip-startup-preflight"]);
+    expect(calls[0]?.args).toEqual(["up", "--skip-startup-preflight"]);
     expect(logSpy).toHaveBeenCalledTimes(1);
   });
 });

@@ -25,7 +25,7 @@ class StubBacklogService {
 }
 
 describe("AgentEventQueueService", () => {
-  it("enqueues docs.update messages only for running subscribed roles", async () => {
+  it("enqueues release-plan.create messages only for running subscribed roles", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
     const runtimeDir = path.join(tempDir, ".codefleet", "runtime");
     await fs.mkdir(runtimeDir, { recursive: true });
@@ -67,7 +67,10 @@ describe("AgentEventQueueService", () => {
     await fs.writeFile(path.join(runtimeDir, "agents.json"), `${JSON.stringify(runtimes, null, 2)}\n`, "utf8");
 
     const service = new AgentEventQueueService(runtimeDir, new StubBacklogService());
-    const result = await service.enqueueToRunningAgents({ type: "docs.update", paths: ["docs/spec.md"] });
+    const result = await service.enqueueToRunningAgents({
+      type: "release-plan.create",
+      path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
+    });
 
     expect(result.enqueuedAgentIds).toEqual(["curator-1"]);
     expect(result.files).toHaveLength(1);
@@ -80,16 +83,18 @@ describe("AgentEventQueueService", () => {
           id: string;
           agentId: string;
           agentRole: string;
-          event: { type: string; paths: string[] };
+          event: { type: string; path: string };
           source: { command: string };
         },
     );
 
     expect(messages.map((message) => message.agentId).sort()).toEqual(["curator-1"]);
     expect(messages.every((message) => message.agentRole === "Curator")).toBe(true);
-    expect(messages.every((message) => message.event.type === "docs.update")).toBe(true);
-    expect(messages.every((message) => message.event.paths[0] === "docs/spec.md")).toBe(true);
-    expect(messages.every((message) => message.source.command === "codefleet trigger docs.update")).toBe(true);
+    expect(messages.every((message) => message.event.type === "release-plan.create")).toBe(true);
+    expect(
+      messages.every((message) => message.event.path === ".codefleet/data/release-plan/01HXTEST0000000000000000.md"),
+    ).toBe(true);
+    expect(messages.every((message) => message.source.command === "codefleet trigger release-plan.create")).toBe(true);
     expect(messages.every((message) => typeof message.id === "string" && message.id.length === 26)).toBe(true);
   });
 
@@ -428,7 +433,7 @@ describe("AgentEventQueueService", () => {
     expect(result.files).toHaveLength(1);
   });
 
-  it("enqueues feedback-note.create for running orchestrator", async () => {
+  it("does not enqueue feedback-note.create because orchestrator no longer subscribes to it", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-event-queue-"));
     const runtimeDir = path.join(tempDir, ".codefleet", "runtime");
     await fs.mkdir(runtimeDir, { recursive: true });
@@ -466,13 +471,8 @@ describe("AgentEventQueueService", () => {
       path: ".codefleet/data/feedback-notes/01HXTEST0000000000000000.md",
     });
 
-    expect(result.enqueuedAgentIds).toEqual(["orchestrator-1"]);
-    expect(result.files).toHaveLength(1);
-    const message = JSON.parse(await fs.readFile(result.files[0], "utf8")) as {
-      event: { type: string; path?: string };
-    };
-    expect(message.event.type).toBe("feedback-note.create");
-    expect(message.event.path).toBe(".codefleet/data/feedback-notes/01HXTEST0000000000000000.md");
+    expect(result.enqueuedAgentIds).toEqual([]);
+    expect(result.files).toHaveLength(0);
   });
 
   it("drops backlog.epic.ready when same event is already pending/processing", async () => {

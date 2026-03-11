@@ -29,17 +29,13 @@ const AGENT_ROLE_DEFINITIONS: Record<AgentRole, AgentRoleDefinition> = {
         triggerEvent: "backlog.update",
         emitEvent: "backlog.update",
       },
-      "feedback-note.create": {
-        triggerEvent: "feedback-note.create",
-        emitEvent: null,
-      },
     },
   },
   Curator: {
     role: "Curator",
     subscribedEvents: {
-      "docs.update": {
-        triggerEvent: "source-brief.update",
+      "release-plan.create": {
+        triggerEvent: "release-plan.create",
         emitEvent: "source-brief.update",
       },
     },

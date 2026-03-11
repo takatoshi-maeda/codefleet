@@ -1,10 +1,5 @@
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { BacklogPoller } from "../src/events/watchers/backlog-poller.js";
-import { GitMainWatcher } from "../src/events/watchers/git-main-watcher.js";
-import { ResultFileWatcher } from "../src/events/watchers/result-file-watcher.js";
 import type { SystemEvent } from "../src/events/router.js";
 
 class RecordingSink {
@@ -22,49 +17,6 @@ afterEach(async () => {
 });
 
 describe("watchers", () => {
-  it("emits docs.update when main ref changes", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-git-watch-"));
-    await fs.mkdir(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
-
-    const sink = new RecordingSink();
-    const watcher = new GitMainWatcher(sink, tempDir, 20);
-    watcher.start();
-
-    await fs.writeFile(path.join(tempDir, ".git", "refs", "heads", "main"), "commit-a\n", "utf8");
-    await sleep(60);
-
-    watcher.stop();
-
-    expect(
-      sink.events.some(
-        (event) => event.type === "docs.update" && event.paths.some((entry) => entry === ".git/refs/heads/main"),
-      ),
-    ).toBe(true);
-  });
-
-  it("emits docs.update for new result files", async () => {
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "codefleet-result-watch-"));
-    const resultsDir = path.join(tempDir, "results");
-    await fs.mkdir(resultsDir, { recursive: true });
-
-    const sink = new RecordingSink();
-    const watcher = new ResultFileWatcher(sink, resultsDir, 20);
-    watcher.start();
-
-    await fs.writeFile(path.join(resultsDir, "ATR-20260101-001.json"), "{}", "utf8");
-    await sleep(60);
-
-    watcher.stop();
-
-    expect(
-      sink.events.some(
-        (event) =>
-          event.type === "docs.update" &&
-          event.paths.some((entry) => entry.endsWith(path.join("results", "ATR-20260101-001.json"))),
-      ),
-    ).toBe(true);
-  });
-
   it("emits backlog.epic.ready repeatedly when ready epics exist", async () => {
     const sink = new RecordingSink();
     const poller = new BacklogPoller(

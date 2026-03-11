@@ -67,7 +67,7 @@ describe("role tools commands", () => {
       await command.parseAsync(["agents-md", "view"], { from: "user" });
     }
 
-    expect(readFileSpy).toHaveBeenCalledWith("/workspace/docs/spec/AGENTS.md", "utf8");
+    expect(readFileSpy).toHaveBeenCalledWith("/workspace/AGENTS.md", "utf8");
     expect(logSpy).toHaveBeenCalledTimes(commands.length);
     expect(logSpy).toHaveBeenNthCalledWith(1, "# AGENTS\nuse this\n");
     expect(logSpy).toHaveBeenNthCalledWith(commands.length, "# AGENTS\nuse this\n");
@@ -78,7 +78,7 @@ describe("role tools commands", () => {
     vi.spyOn(fs, "readFile").mockRejectedValue(missing);
 
     await expect(createOrchestratorToolsCli().parseAsync(["agents-md", "view"], { from: "user" })).rejects.toThrow(
-      "AGENTS.md not found at /workspace/docs/spec/AGENTS.md",
+      "AGENTS.md not found at /workspace/AGENTS.md",
     );
   });
 

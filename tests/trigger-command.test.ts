@@ -42,7 +42,7 @@ describe("trigger command", () => {
 
     await expect(command.parseAsync(["--help"], { from: "user" })).rejects.toBeDefined();
 
-    expect(output).toContain("docs.update");
+    expect(output).toContain("release-plan.create");
     expect(output).toContain("source-brief.update");
     expect(output).toContain("feedback-note.create");
     expect(output).toContain("acceptance-test.update");
@@ -54,13 +54,13 @@ describe("trigger command", () => {
     expect(output).toContain("backlog.epic.polish.ready");
     expect(output).toContain("backlog.epic.review.ready");
     expect(output).toContain("debug.playwright-test");
-    expect(output).toContain("--paths <path> (repeatable/comma-separated)");
+    expect(output).toContain("--path <path>");
     expect(output).toContain("--brief-path <path>");
     expect(output).toContain("--path <path>");
     expect(output).not.toContain("docs.update [options]");
   });
 
-  it("shows docs.update params via subcommand --help", async () => {
+  it("shows release-plan.create params via subcommand --help", async () => {
     const command = createTriggerCommand();
     let output = "";
     command
@@ -74,30 +74,30 @@ describe("trigger command", () => {
         },
       });
 
-    await expect(command.parseAsync(["docs.update", "--help"], { from: "user" })).rejects.toBeDefined();
-    expect(output).toContain("--paths <path>");
+    await expect(command.parseAsync(["release-plan.create", "--help"], { from: "user" })).rejects.toBeDefined();
+    expect(output).toContain("--path <path>");
   });
 
-  it("builds docs.update event from --paths option values", async () => {
+  it("builds release-plan.create event from --path option value", async () => {
     const router = new RecordingRouter();
     const queue = new RecordingQueue();
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => undefined);
 
     await createTriggerCommand({ router, queue }).parseAsync(
-      ["docs.update", "--paths", "docs/a.md,docs/b.md", "--paths", "docs/c.md"],
+      ["release-plan.create", "--path", ".codefleet/data/release-plan/01HXTEST0000000000000000.md"],
       { from: "user" },
     );
 
     expect(router.events).toEqual([
       {
-        type: "docs.update",
-        paths: ["docs/a.md", "docs/b.md", "docs/c.md"],
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
       },
     ]);
     expect(queue.events).toEqual([
       {
-        type: "docs.update",
-        paths: ["docs/a.md", "docs/b.md", "docs/c.md"],
+        type: "release-plan.create",
+        path: ".codefleet/data/release-plan/01HXTEST0000000000000000.md",
       },
     ]);
     expect(logSpy).toHaveBeenCalled();

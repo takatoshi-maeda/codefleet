@@ -9,7 +9,7 @@ import { FleetObservabilityService } from "../../domain/fleet/fleet-observabilit
 import { FleetService } from "../../domain/fleet/fleet-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/front-desk.js";
-import type { FeedbackNoteEventPublisher } from "../../agents/tools/feedback-note-agent-tools.js";
+import type { ReleasePlanEventPublisher } from "../../agents/tools/release-plan-agent-tools.js";
 import { LocalProcessRegistry, resolveProjectIdFromGitRemote } from "../../domain/fleet/local-process-registry.js";
 import {
   DEFAULT_DOCUMENTS_ROOT_DIR,
@@ -156,10 +156,10 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   );
   const documentEventBus = new DocumentEventBus();
   const toolAuditLogger = new JsonlMcpToolAuditLogger(options.toolAuditLogPath ?? DEFAULT_TOOL_AUDIT_LOG_PATH);
-  const feedbackNoteEventPublisher = createFeedbackNoteEventPublisher(eventQueueService);
+  const releasePlanEventPublisher = createReleasePlanEventPublisher(eventQueueService);
   const frontDeskRuntimeConfig: CodefleetFrontDeskRuntimeConfig = {
     ...(options.frontDesk ?? {}),
-    feedbackNoteEventPublisher,
+    releasePlanEventPublisher,
   };
   registerDocumentRoutes(app, documentService, documentEventBus, eventQueueService);
   const mounts = await mountMcpRoutes(app, {
@@ -189,12 +189,12 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   return { app, mounts };
 }
 
-function createFeedbackNoteEventPublisher(
+function createReleasePlanEventPublisher(
   queueService: Pick<AgentEventQueueService, "enqueueToRunningAgents">,
-): FeedbackNoteEventPublisher {
+): ReleasePlanEventPublisher {
   return {
-    async publishFeedbackNoteCreated(path) {
-      const result = await queueService.enqueueToRunningAgents({ type: "feedback-note.create", path });
+    async publishReleasePlanCreated(path) {
+      const result = await queueService.enqueueToRunningAgents({ type: "release-plan.create", path });
       return { enqueuedAgentIds: result.enqueuedAgentIds };
     },
   };
@@ -406,7 +406,6 @@ function registerDocumentRoutes(
           change: { kind: "updated" },
         },
       });
-      await eventQueueService.enqueueToRunningAgents({ type: "docs.update", paths: [payload.path] });
       c.header("Cache-Control", "no-store");
       return c.json(payload);
     } catch (error) {

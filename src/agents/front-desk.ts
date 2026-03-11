@@ -11,8 +11,8 @@ import type { ZodType } from "zod";
 import type { BacklogService } from "../domain/backlog/backlog-service.js";
 import { DEFAULT_DOCUMENTS_ROOT_DIR } from "../domain/documents/document-service.js";
 import { createBacklogAgentTools } from "./tools/backlog-agent-tools.js";
-import { createFeedbackNoteAgentTools } from "./tools/feedback-note-agent-tools.js";
-import type { FeedbackNoteEventPublisher } from "./tools/feedback-note-agent-tools.js";
+import { createReleasePlanAgentTools } from "./tools/release-plan-agent-tools.js";
+import type { ReleasePlanEventPublisher } from "./tools/release-plan-agent-tools.js";
 
 export interface CodefleetFrontDeskLlmConfig {
   provider: LLMProvider;
@@ -26,8 +26,8 @@ export interface CodefleetFrontDeskLlmConfig {
 export interface CodefleetFrontDeskRuntimeConfig {
   llm?: Partial<CodefleetFrontDeskLlmConfig>;
   maxTurns?: number;
-  feedbackNotesDir?: string;
-  feedbackNoteEventPublisher?: FeedbackNoteEventPublisher;
+  releasePlansDir?: string;
+  releasePlanEventPublisher?: ReleasePlanEventPublisher;
   fileToolWorkingDir?: string;
   historyBaseDir?: string;
   clientFactory?: (options: LLMClientOptions) => LLMClient;
@@ -35,8 +35,8 @@ export interface CodefleetFrontDeskRuntimeConfig {
 
 interface ResolvedCodefleetFrontDeskRuntimeConfig {
   maxTurns: number;
-  feedbackNotesDir: string;
-  feedbackNoteEventPublisher?: FeedbackNoteEventPublisher;
+  releasePlansDir: string;
+  releasePlanEventPublisher?: ReleasePlanEventPublisher;
   fileToolWorkingDir: string;
   historyBaseDir: string;
   llm: CodefleetFrontDeskLlmConfig;
@@ -46,7 +46,7 @@ interface ResolvedCodefleetFrontDeskRuntimeConfig {
 const DEFAULT_LLM_PROVIDER: LLMProvider = "openai";
 const DEFAULT_LLM_MODEL = "gpt-5.3-codex";
 const DEFAULT_MAX_TURNS = 6;
-const DEFAULT_FEEDBACK_NOTES_DIR = ".codefleet/data/feedback-notes";
+const DEFAULT_RELEASE_PLANS_DIR = ".codefleet/data/release-plan";
 const DEFAULT_HISTORY_BASE_DIR = ".codefleet/runtime/front-desk-history";
 
 const DEFAULT_API_KEY_ENV_BY_PROVIDER: Record<LLMProvider, string> = {
@@ -67,10 +67,10 @@ export function createCodefleetFrontDeskAgent(
   const llmClient = resolvedConfig.clientFactory(toLlmClientOptions(resolvedConfig.llm));
   const tools = [
     ...createBacklogAgentTools(backlogService),
-    ...createFeedbackNoteAgentTools({
-      notesDir: resolvedConfig.feedbackNotesDir,
+    ...createReleasePlanAgentTools({
+      releasePlansDir: resolvedConfig.releasePlansDir,
       projectRootDir: process.cwd(),
-      eventPublisher: resolvedConfig.feedbackNoteEventPublisher,
+      eventPublisher: resolvedConfig.releasePlanEventPublisher,
     }),
     ...createFrontDeskFileReadTools(resolvedConfig.fileToolWorkingDir),
   ];
@@ -106,8 +106,8 @@ export function resolveCodefleetFrontDeskRuntimeConfig(
 
   return {
     maxTurns,
-    feedbackNotesDir: runtimeConfig.feedbackNotesDir ?? DEFAULT_FEEDBACK_NOTES_DIR,
-    feedbackNoteEventPublisher: runtimeConfig.feedbackNoteEventPublisher,
+    releasePlansDir: runtimeConfig.releasePlansDir ?? DEFAULT_RELEASE_PLANS_DIR,
+    releasePlanEventPublisher: runtimeConfig.releasePlanEventPublisher,
     fileToolWorkingDir: runtimeConfig.fileToolWorkingDir ?? process.cwd(),
     historyBaseDir: runtimeConfig.historyBaseDir ?? DEFAULT_HISTORY_BASE_DIR,
     llm: {
@@ -125,7 +125,10 @@ export function resolveCodefleetFrontDeskRuntimeConfig(
 function createFrontDeskFileReadTools(workingDir: string) {
   const fileTools = createFileTools({
     workingDir,
-    allowedPaths: [DEFAULT_DOCUMENTS_ROOT_DIR],
+    // front-desk primarily works against shared spec docs, but release-plan
+    // intake sometimes needs repository-root inspection to understand current
+    // implementation before writing a hand-off artifact.
+    allowedPaths: [".", DEFAULT_DOCUMENTS_ROOT_DIR],
   });
   const listDirectory = fileTools.find((tool) => tool.name === "ListDirectory");
   const readFile = fileTools.find((tool) => tool.name === "ReadFile");
