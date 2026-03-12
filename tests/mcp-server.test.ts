@@ -703,6 +703,68 @@ describe("McpApiServer", () => {
       await server.stop();
     }
   });
+
+  it("serves requirements-interviewer with file tools only", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-requirements-tools-"));
+    const backlogService = new BacklogService(tempDir);
+    const streamInputs: LLMChatInput[] = [];
+    const mockClient: LLMClient = {
+      provider: "openai",
+      model: "mock-requirements-interviewer",
+      capabilities: {
+        supportsReasoning: true,
+        supportsToolCalls: true,
+        supportsStreaming: true,
+        supportsImages: false,
+        contextWindowSize: 8_000,
+      },
+      estimateTokens: () => 0,
+      invoke: async () => {
+        throw new Error("invoke should not be called");
+      },
+      stream: async function* (input: LLMChatInput) {
+        streamInputs.push(input);
+        yield {
+          type: "response.completed",
+          result: {
+            type: "message",
+            content: "requirements captured",
+            toolCalls: [],
+            usage: emptyUsage(),
+            responseId: "resp-requirements",
+            finishReason: "stop",
+          },
+        };
+      },
+    };
+
+    const port = 44000 + Math.floor(Math.random() * 1000);
+    const server = new McpApiServer({
+      host: "127.0.0.1",
+      port,
+      dataDir: path.join(tempDir, ".codefleet/runtime/mcp"),
+      backlogService,
+      frontDesk: {
+        llm: { provider: "openai", model: "gpt-5.3-codex", apiKey: "test-key" },
+        clientFactory: () => mockClient,
+        maxTurns: 4,
+      },
+    });
+
+    try {
+      await server.start();
+      const agentRun = await callTool(port, "agent.run", {
+        agentId: "requirements-interviewer",
+        message: "checkout flow requirement",
+      });
+      expect(agentRun.result?.isError).toBe(false);
+      expect(String(agentRun.result?.structuredContent?.message ?? "")).toContain("requirements captured");
+      expect(streamInputs).toHaveLength(1);
+      expect(streamInputs[0]?.tools?.map((tool) => tool.name)).toEqual(["ListDirectory", "ReadFile", "WriteFile", "MakeDirectory"]);
+    } finally {
+      await server.stop();
+    }
+  });
 });
 
 async function readSseChunks(response: Response, chunkCount: number): Promise<string> {

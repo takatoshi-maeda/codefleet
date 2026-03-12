@@ -44,6 +44,7 @@ type TimelineItem =
       summary: string;
       status: 'running' | 'completed' | 'failed';
       argumentLines?: string[];
+      errorMessage?: string;
     }
   | {
       id: string;
@@ -149,9 +150,10 @@ function getAgentMessageContent(entry: AgentEntry): string {
 }
 
 function timelineItemKey(item: TimelineItem): string {
+  if (item.id.trim()) return item.id;
   if (item.kind === 'reasoning') return `reasoning:${item.text}`;
   if (item.kind === 'tool-call') {
-    return `tool:${item.summary}:${item.argumentLines?.join('\n') ?? ''}`;
+    return `tool:${item.summary}:${item.argumentLines?.join('\n') ?? ''}:${item.errorMessage ?? ''}`;
   }
   return `text:${item.text}`;
 }
@@ -160,7 +162,11 @@ function mergeTimeline(remote: TimelineItem[], local: TimelineItem[]): TimelineI
   if (remote.length === 0) return [...local];
   if (local.length === 0) return [...remote];
 
-  const merged: TimelineItem[] = [...remote];
+  const localByKey = new Map(local.map((item) => [timelineItemKey(item), item] as const));
+  const merged: TimelineItem[] = remote.map((item) => {
+    const key = timelineItemKey(item);
+    return localByKey.get(key) ? { ...localByKey.get(key)!, ...item } : item;
+  });
   const seen = new Set(merged.map(timelineItemKey));
   for (const item of local) {
     const key = timelineItemKey(item);
@@ -195,12 +201,15 @@ function mergeAgentEntry(remote: AgentEntry | undefined, local: AgentEntry | und
   };
 }
 
-function completeRunningTimelineItems(timeline: TimelineItem[]): TimelineItem[] {
+function completeRunningTimelineItems(
+  timeline: TimelineItem[],
+  options: { reasoning?: boolean; toolCalls?: boolean } = { reasoning: true, toolCalls: true },
+): TimelineItem[] {
   return timeline.map((item) => {
-    if (item.kind === 'reasoning' && item.status === 'running') {
+    if (options.reasoning && item.kind === 'reasoning' && item.status === 'running') {
       return { ...item, status: 'completed' };
     }
-    if (item.kind === 'tool-call' && item.status === 'running') {
+    if (options.toolCalls && item.kind === 'tool-call' && item.status === 'running') {
       return { ...item, status: 'completed' };
     }
     return item;
@@ -328,9 +337,11 @@ async function copyToClipboard(text: string): Promise<boolean> {
 
 function TimelineDot({
   running,
+  failed,
   colors,
 }: {
   running: boolean;
+  failed?: boolean;
   colors: ReturnType<typeof useCodefleetColors>;
 }) {
   const [visible, setVisible] = useState(true);
@@ -349,7 +360,7 @@ function TimelineDot({
       style={[
         tlStyles.dot,
         {
-          backgroundColor: running ? colors.mutedText : '#14b8a6',
+          backgroundColor: failed ? '#ef4444' : running ? colors.mutedText : '#14b8a6',
           opacity: visible ? 1 : 0.25,
         },
       ]}
@@ -382,7 +393,7 @@ function InlineTimelineItem({
     return (
       <View style={tlStyles.item}>
         <View style={tlStyles.header}>
-          <TimelineDot running={item.status === 'running'} colors={colors} />
+          <TimelineDot running={item.status === 'running'} failed={item.status === 'failed'} colors={colors} />
           <Text style={[tlStyles.label, { color: colors.text }]}>
             ToolCall: {item.summary || 'tool_call'}
           </Text>
@@ -396,6 +407,9 @@ function InlineTimelineItem({
               </Text>
             ))}
           </View>
+        ) : null}
+        {item.errorMessage ? (
+          <Text style={[tlStyles.errorText, { color: '#ef4444' }]}>{item.errorMessage}</Text>
         ) : null}
       </View>
     );
@@ -728,7 +742,7 @@ function applyStreamEvent(current: ThreadMessage, event: JsonRpcNotification): T
 
   if (type === 'agent.text_delta') {
     const delta = typeof params?.delta === 'string' ? params.delta : '';
-    nextEntry.timeline = completeRunningTimelineItems(nextEntry.timeline);
+    nextEntry.timeline = completeRunningTimelineItems(nextEntry.timeline, { reasoning: true, toolCalls: false });
     nextEntry.responseText = `${nextEntry.responseText ?? ''}${delta}`;
   }
 
@@ -764,8 +778,39 @@ function applyStreamEvent(current: ThreadMessage, event: JsonRpcNotification): T
     });
   }
 
+  if (type === 'agent.tool_call_finish') {
+    const summary = typeof params?.summary === 'string' ? params.summary : 'tool_call';
+    const toolCallId = typeof params?.toolCallId === 'string' ? params.toolCallId : undefined;
+    const status = params?.status === 'failed' ? 'failed' : 'completed';
+    const errorMessage = typeof params?.errorMessage === 'string' ? params.errorMessage : undefined;
+    for (let index = nextEntry.timeline.length - 1; index >= 0; index -= 1) {
+      const item = nextEntry.timeline[index];
+      if (
+        item.kind === 'tool-call' &&
+        item.status === 'running' &&
+        ((toolCallId && item.id === toolCallId) || item.summary === summary)
+      ) {
+        nextEntry.timeline[index] = { ...item, status, errorMessage };
+        return {
+          ...current,
+          content: getAgentMessageContent(nextEntry),
+          status: 'running',
+          statusLine: buildAgentStatusLine(nextEntry, 0),
+          entry: nextEntry,
+        };
+      }
+    }
+    nextEntry.timeline.push({
+      id: toolCallId ?? messageId('tool'),
+      kind: 'tool-call',
+      summary,
+      status,
+      errorMessage,
+    });
+  }
+
   if (type === 'agent.text_result') {
-    nextEntry.timeline = completeRunningTimelineItems(nextEntry.timeline);
+    nextEntry.timeline = completeRunningTimelineItems(nextEntry.timeline, { reasoning: true, toolCalls: false });
   }
 
   return {
@@ -1425,6 +1470,12 @@ const tlStyles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     flexShrink: 0,
+  },
+  errorText: {
+    marginTop: 8,
+    marginLeft: 18,
+    fontSize: 12,
+    fontWeight: '600',
   },
   label: {
     fontSize: 13,

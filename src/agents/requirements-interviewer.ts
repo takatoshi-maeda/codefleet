@@ -5,8 +5,6 @@ import { fileURLToPath } from "node:url";
 import type { ZodType } from "zod";
 import type { BacklogService } from "../domain/backlog/backlog-service.js";
 import { DEFAULT_DOCUMENTS_ROOT_DIR } from "../domain/documents/document-service.js";
-import { createBacklogAgentTools } from "./tools/backlog-agent-tools.js";
-import { createReleasePlanAgentTools } from "./tools/release-plan-agent-tools.js";
 import {
   resolveCodefleetFrontDeskRuntimeConfig,
   type CodefleetFrontDeskLlmConfig,
@@ -21,7 +19,7 @@ export const CODEFLEET_REQUIREMENTS_INTERVIEWER_SYSTEM_PROMPT =
   createRequirementsInterviewerPromptLoader().format("instructions");
 
 export function createCodefleetRequirementsInterviewerAgent(
-  backlogService: BacklogService,
+  _backlogService: BacklogService,
   runtimeConfig: RequirementsInterviewerRuntimeConfig = {},
 ) {
   const resolvedConfig = resolveCodefleetFrontDeskRuntimeConfig({
@@ -29,15 +27,7 @@ export function createCodefleetRequirementsInterviewerAgent(
     historyBaseDir: runtimeConfig.historyBaseDir ?? DEFAULT_HISTORY_BASE_DIR,
   });
   const llmClient = resolvedConfig.clientFactory(toLlmClientOptions(resolvedConfig.llm));
-  const tools = [
-    ...createBacklogAgentTools(backlogService),
-    ...createReleasePlanAgentTools({
-      releasePlansDir: resolvedConfig.releasePlansDir,
-      projectRootDir: process.cwd(),
-      eventPublisher: resolvedConfig.releasePlanEventPublisher,
-    }),
-    ...createSharedFileTools(resolvedConfig.fileToolWorkingDir),
-  ];
+  const tools = createSharedFileTools(resolvedConfig.fileToolWorkingDir);
 
   return (context: AgentContext) => {
     const persistentContext = withPersistentThreadHistory(context, resolvedConfig.historyBaseDir);
