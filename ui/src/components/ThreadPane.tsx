@@ -889,13 +889,15 @@ export function ThreadPane({ client, title = 'Feedback Desk', agentId }: Props) 
   }, [loadConversation, selectedSessionId]);
 
   useEffect(() => {
-    if (!isRunningRemote || selectedSessionId === 'new') return;
+    // While a local `agent.run` stream is active, the live SSE payload is the source of truth.
+    // Polling `conversations.get` in parallel causes message list churn on follow-up turns.
+    if (!isRunningRemote || selectedSessionId === 'new' || streamDraft !== null) return;
     const timer = setInterval(() => {
       void loadConversation(selectedSessionId);
       void refreshSessions();
     }, POLL_INTERVAL_MS);
     return () => clearInterval(timer);
-  }, [isRunningRemote, loadConversation, refreshSessions, selectedSessionId]);
+  }, [isRunningRemote, loadConversation, refreshSessions, selectedSessionId, streamDraft]);
 
   const historyItems = useMemo(
     () => sessions.filter((item) => item.sessionId && item.sessionId !== 'new'),
