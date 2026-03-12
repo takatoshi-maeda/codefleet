@@ -18,7 +18,7 @@ export function registerBacklogMcpTools(
   service: BacklogService,
   options: RegisterBacklogMcpToolsOptions = {},
 ): void {
-  const agentName = options.agentName ?? "codefleet.front-desk";
+  const agentName = options.agentName ?? "codefleet";
   for (const definition of listBacklogToolDefinitions()) {
     mount.mcpServer.registerTool(
       definition.name,

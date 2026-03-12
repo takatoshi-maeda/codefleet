@@ -30,7 +30,7 @@ export function RequirementsInterviewWorkspace({ client }: Props) {
           { borderRightColor: colors.surfaceBorder, borderBottomColor: colors.surfaceBorder },
         ]}
       >
-        <ThreadPane client={client} title="" />
+        <ThreadPane client={client} title="" agentId="requirements-interviewer" />
       </View>
 
       <View

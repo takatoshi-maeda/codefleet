@@ -57,6 +57,7 @@ export type ConversationSummary = {
   title?: string | null;
   createdAt: string;
   updatedAt: string;
+  agentId?: string | null;
   status?: 'idle' | 'progress';
   turnCount: number;
   latestUserMessage?: string | null;
@@ -90,6 +91,7 @@ export type ConversationGetResult = {
   title?: string | null;
   createdAt: string;
   updatedAt: string;
+  agentId?: string | null;
   agentName?: string | null;
   status?: 'idle' | 'progress';
   inProgress?: ConversationInProgress | null;
@@ -103,6 +105,7 @@ export type AgentRunResult = {
   turnId?: string;
   responseId?: string;
   message?: string;
+  agentId?: string;
   notificationToken?: string;
   errorMessage?: string;
 };
@@ -187,11 +190,12 @@ export type CodefleetClient = {
     options?: StreamRequestOptions,
   ): Promise<CodefleetWatchResult>;
   fetchFleetStatus(endpoint: string): Promise<FleetStatusResponse | null>;
-  listConversations(limit?: number): Promise<ConversationsListResult>;
-  getConversation(sessionId: string): Promise<ConversationGetResult>;
+  listConversations(limit?: number, agentId?: string): Promise<ConversationsListResult>;
+  getConversation(sessionId: string, agentId?: string): Promise<ConversationGetResult>;
   runAgent(args: {
     message: string;
     sessionId?: string | null;
+    agentId?: string;
     signal?: AbortSignal;
     onStreamEvent?: (message: JsonRpcNotification) => void;
   }): Promise<AgentRunResult>;
@@ -535,7 +539,7 @@ async function callTool<T>(
 export function createCodefleetMcpClient(
   options: CreateCodefleetMcpClientOptions,
 ): CodefleetClient {
-  const agentName = options.agentName ?? 'codefleet.front-desk';
+  const agentName = options.agentName ?? 'codefleet';
   const protocolVersion = options.protocolVersion ?? MCP_PROTOCOL_VERSION;
   const clientInfo = options.clientInfo ?? {
     name: 'codefleet-ui',
@@ -581,19 +585,19 @@ export function createCodefleetMcpClient(
       if (!response.ok) return null;
       return (await response.json()) as FleetStatusResponse;
     },
-    async listConversations(limit = 50) {
+    async listConversations(limit = 50, agentId) {
       return callTool<ConversationsListResult>(
         'conversations.list',
-        { limit },
+        { limit, ...(agentId ? { agentId } : {}) },
         {},
         buildConfig(),
         'json',
       );
     },
-    async getConversation(sessionId: string) {
+    async getConversation(sessionId: string, agentId) {
       return callTool<ConversationGetResult>(
         'conversations.get',
-        { sessionId },
+        { sessionId, ...(agentId ? { agentId } : {}) },
         {},
         buildConfig(),
         'json',
@@ -608,6 +612,9 @@ export function createCodefleetMcpClient(
       };
       if (args.sessionId) {
         payload.sessionId = args.sessionId;
+      }
+      if (args.agentId) {
+        payload.agentId = args.agentId;
       }
 
       return callTool<AgentRunResult>(

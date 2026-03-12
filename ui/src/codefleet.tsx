@@ -50,7 +50,7 @@ export default function CodefleetScreen({
   const board = useCodefleetBoard(client, true);
   const colors = useCodefleetColors();
   const standaloneTheme = useOptionalStandaloneThemePreference();
-  const renderSessionPane = chrome?.renderSessionPane ?? (() => <ThreadPane client={client} />);
+  const renderSessionPane = chrome?.renderSessionPane ?? (() => <ThreadPane client={client} agentId="front-desk" />);
   const hasSessionPane = true;
   const [isSessionOpen, setIsSessionOpen] = useState(false);
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);

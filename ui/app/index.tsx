@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import CodefleetScreen from '../codefleet';
 import { createCodefleetMcpClient } from '../src/mcp/client';
 
-const DEFAULT_AGENT = 'codefleet.front-desk';
+const DEFAULT_AGENT = 'codefleet';
 const DEFAULT_BASE_URL = process.env.EXPO_PUBLIC_CODEFLEET_BASE_URL ?? 'http://localhost:3000';
 
 export default function Index() {

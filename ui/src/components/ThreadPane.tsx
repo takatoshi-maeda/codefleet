@@ -26,6 +26,7 @@ import { useCodefleetColors } from '../theme/useCodefleetColors';
 type Props = {
   client: CodefleetClient;
   title?: string;
+  agentId?: string;
 };
 
 type ContentPart = { type: 'text'; text: string } | { type: 'image'; url: string };
@@ -776,7 +777,7 @@ function applyStreamEvent(current: ThreadMessage, event: JsonRpcNotification): T
   };
 }
 
-export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
+export function ThreadPane({ client, title = 'Feedback Desk', agentId }: Props) {
   const colors = useCodefleetColors();
   const [sessions, setSessions] = useState<ConversationSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState('new');
@@ -807,7 +808,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
 
   const refreshSessions = useCallback(async () => {
     try {
-      const result = await client.listConversations(50);
+      const result = await client.listConversations(50, agentId);
       const next = [...result.sessions].sort((a, b) => {
         const aTime = Date.parse(a.updatedAt ?? a.createdAt ?? '') || 0;
         const bTime = Date.parse(b.updatedAt ?? b.createdAt ?? '') || 0;
@@ -818,7 +819,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load history.');
     }
-  }, [client]);
+  }, [agentId, client]);
 
   const loadConversation = useCallback(async (sessionId: string) => {
     if (!sessionId || sessionId === 'new') {
@@ -831,7 +832,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
 
     setIsLoadingConversation(true);
     try {
-      const result = (await client.getConversation(sessionId)) as ExtendedConversation;
+      const result = (await client.getConversation(sessionId, agentId)) as ExtendedConversation;
       if (result.inProgress?.turnId && streamDraftRef.current?.agentMessage.entry) {
         turnHistoryRef.current[result.inProgress.turnId] = mergeAgentEntry(
           turnHistoryRef.current[result.inProgress.turnId],
@@ -876,7 +877,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
     } finally {
       setIsLoadingConversation(false);
     }
-  }, [client, title]);
+  }, [agentId, client, title]);
 
   useEffect(() => {
     void refreshSessions();
@@ -973,6 +974,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
     try {
       const result = await client.runAgent({
         message: text,
+        agentId,
         sessionId: selectedSessionId === 'new' ? undefined : selectedSessionId,
         signal: abortController.signal,
         onStreamEvent: (event) => {
@@ -1046,7 +1048,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [client, draft, isSubmitting, loadConversation, refreshSessions, selectedSessionId, title]);
+  }, [agentId, client, draft, isSubmitting, loadConversation, refreshSessions, selectedSessionId, title]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.surface }]}>

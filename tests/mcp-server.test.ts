@@ -10,7 +10,7 @@ import { McpApiServer } from "../src/api/mcp/server.js";
 import { resolveProjectIdFromGitRemote } from "../src/domain/fleet/local-process-registry.js";
 
 describe("McpApiServer", () => {
-  it("exposes codefleet.front-desk in /api/mcp and reports ready status", async () => {
+  it("exposes codefleet in /api/mcp and reports ready status", async () => {
     const port = 39000 + Math.floor(Math.random() * 1000);
     const server = new McpApiServer({
       host: "127.0.0.1",
@@ -24,12 +24,22 @@ describe("McpApiServer", () => {
       const listResponse = await fetch(`http://127.0.0.1:${port}/api/mcp`);
       const listJson = (await listResponse.json()) as { agents?: Array<{ name: string }> };
       expect(listResponse.status).toBe(200);
-      expect(listJson.agents?.some((agent) => agent.name === "codefleet.front-desk")).toBe(true);
+      expect(listJson.agents?.some((agent) => agent.name === "codefleet")).toBe(true);
 
-      const statusResponse = await fetch(`http://127.0.0.1:${port}/api/mcp/codefleet.front-desk/status`);
+      const statusResponse = await fetch(`http://127.0.0.1:${port}/api/mcp/codefleet/status`);
       const statusJson = (await statusResponse.json()) as { state?: string };
       expect(statusResponse.status).toBe(200);
       expect(statusJson.state).toBe("ready");
+
+      const agentList = await callTool(port, "agent.list", {});
+      expect(agentList.result?.structuredContent?.defaultAgentId).toBe("front-desk");
+      expect(agentList.result?.structuredContent?.agents).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ agentId: "front-desk" }),
+          expect.objectContaining({ agentId: "requirements-interviewer" }),
+          expect.objectContaining({ agentId: "release-plan" }),
+        ]),
+      );
 
       const fleetStatusResponse = await fetch(`http://127.0.0.1:${port}/api/codefleet/status`);
       const fleetStatusJson = (await fleetStatusResponse.json()) as {
@@ -239,7 +249,7 @@ describe("McpApiServer", () => {
       expect(Array.isArray(activityList.result?.structuredContent?.roles)).toBe(true);
 
       const fleetWatchStreamResponse = await fetch(
-        `http://127.0.0.1:${port}/api/mcp/codefleet.front-desk/tools/call/fleet.watch`,
+        `http://127.0.0.1:${port}/api/mcp/codefleet/tools/call/fleet.watch`,
         {
           method: "POST",
           headers: {
@@ -285,7 +295,10 @@ describe("McpApiServer", () => {
       });
       expect(multimodalRun.result?.isError).toBe(false);
 
-      const conversation = await callTool(port, "conversations.get", { sessionId: imageSessionId });
+      const conversation = await callTool(port, "conversations.get", {
+        sessionId: imageSessionId,
+        agentId: "front-desk",
+      });
       expect(conversation.result?.isError).toBe(false);
       const firstTurn = conversation.result?.structuredContent?.turns?.[0] as { userContent?: unknown } | undefined;
       expect(firstTurn?.userContent).toEqual(imageInput);
@@ -308,14 +321,17 @@ describe("McpApiServer", () => {
       });
       expect(base64Run.result?.isError).toBe(false);
 
-      const base64Conversation = await callTool(port, "conversations.get", { sessionId: base64SessionId });
+      const base64Conversation = await callTool(port, "conversations.get", {
+        sessionId: base64SessionId,
+        agentId: "front-desk",
+      });
       expect(base64Conversation.result?.isError).toBe(false);
       const base64Turn = base64Conversation.result?.structuredContent?.turns?.[0] as {
         userContent?: Array<{ type?: string; source?: { type?: string; url?: string } }>;
       } | undefined;
       const base64ImageUrl = base64Turn?.userContent?.[0]?.source?.url;
       expect(base64ImageUrl).toMatch(
-        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet\\.front-desk/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-base64-[^/]+/[0-9a-f-]+\\.png$`),
+        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-base64-[^/]+/[0-9a-f-]+\\.png$`),
       );
       const servedImage = await fetch(String(base64ImageUrl));
       expect(servedImage.status).toBe(200);
@@ -338,13 +354,16 @@ describe("McpApiServer", () => {
         ],
       });
       expect(dataUrlRun.result?.isError).toBe(false);
-      const dataUrlConversation = await callTool(port, "conversations.get", { sessionId: dataUrlSessionId });
+      const dataUrlConversation = await callTool(port, "conversations.get", {
+        sessionId: dataUrlSessionId,
+        agentId: "front-desk",
+      });
       const dataUrlTurn = dataUrlConversation.result?.structuredContent?.turns?.[0] as {
         userContent?: Array<{ source?: { type?: string; url?: string } }>;
       } | undefined;
       const normalizedDataUrl = dataUrlTurn?.userContent?.[0]?.source?.url;
       expect(normalizedDataUrl).toMatch(
-        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet\\.front-desk/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-dataurl-[^/]+/[0-9a-f-]+\\.png$`),
+        new RegExp(`^http://127\\.0\\.0\\.1:${port}/api/mcp/codefleet/public/uploads/\\d{4}/\\d{2}/\\d{2}/sess-dataurl-[^/]+/[0-9a-f-]+\\.png$`),
       );
     } finally {
       await server.stop();
@@ -363,7 +382,7 @@ describe("McpApiServer", () => {
 
     await server.start();
     const streamResponse = await fetch(
-      `http://127.0.0.1:${port}/api/mcp/codefleet.front-desk/tools/call/fleet.watch`,
+      `http://127.0.0.1:${port}/api/mcp/codefleet/tools/call/fleet.watch`,
       {
         method: "POST",
         headers: {
@@ -555,7 +574,7 @@ describe("McpApiServer", () => {
       isError?: boolean;
       resultCount?: number;
     };
-    expect(parsed.agent).toBe("codefleet.front-desk");
+    expect(parsed.agent).toBe("codefleet");
     expect(parsed.tool).toBe("backlog.epic.list");
     expect(parsed.isError).toBe(false);
     expect(typeof parsed.durationMs).toBe("number");
@@ -751,7 +770,7 @@ async function readSseReaderUntil(
 }
 
 async function callTool(port: number, tool: string, args: Record<string, unknown>) {
-  const response = await fetch(`http://127.0.0.1:${port}/api/mcp/codefleet.front-desk/tools/call/${tool}`, {
+  const response = await fetch(`http://127.0.0.1:${port}/api/mcp/codefleet/tools/call/${tool}`, {
     method: "POST",
     headers: {
       "content-type": "application/json",

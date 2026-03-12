@@ -9,6 +9,8 @@ import { FleetObservabilityService } from "../../domain/fleet/fleet-observabilit
 import { FleetService } from "../../domain/fleet/fleet-service.js";
 import { AgentEventQueueService } from "../../domain/events/agent-event-queue-service.js";
 import { createCodefleetFrontDeskAgent, type CodefleetFrontDeskRuntimeConfig } from "../../agents/front-desk.js";
+import { createCodefleetRequirementsInterviewerAgent } from "../../agents/requirements-interviewer.js";
+import { createCodefleetReleasePlanAgent } from "../../agents/release-plan.js";
 import type { ReleasePlanEventPublisher } from "../../agents/tools/release-plan-agent-tools.js";
 import { LocalProcessRegistry, resolveProjectIdFromGitRemote } from "../../domain/fleet/local-process-registry.js";
 import {
@@ -26,7 +28,10 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3290;
 const DEFAULT_DATA_DIR = ".codefleet/runtime/mcp";
 const DEFAULT_TOOL_AUDIT_LOG_PATH = ".codefleet/runtime/mcp/tool-executions.jsonl";
-const FRONT_DESK_AGENT_NAME = "codefleet.front-desk";
+const MCP_MOUNT_NAME = "codefleet";
+const FRONT_DESK_AGENT_ID = "front-desk";
+const REQUIREMENTS_INTERVIEW_AGENT_ID = "requirements-interviewer";
+const RELEASE_PLAN_AGENT_ID = "release-plan";
 const MCP_ALLOWED_ORIGINS = new Set(["http://localhost:8081"]);
 const SERVER_STOP_TIMEOUT_MS = 5_000;
 const DOCUMENT_WATCH_HEARTBEAT_MS = 15_000;
@@ -165,24 +170,41 @@ export async function buildMcpServer(options: McpApiServerOptions = {}): Promise
   const mounts = await mountMcpRoutes(app, {
     basePath: "/api/mcp",
     dataDir,
-    agentDefinitions: [
+    agentGroups: [
       {
-        name: FRONT_DESK_AGENT_NAME,
-        description: "User-facing support desk for backlog visibility",
-        create: createCodefleetFrontDeskAgent(backlogService, frontDeskRuntimeConfig),
+        mountName: MCP_MOUNT_NAME,
+        description: "Codefleet multi-agent MCP server",
+        defaultAgentId: FRONT_DESK_AGENT_ID,
+        agents: [
+          {
+            agentId: FRONT_DESK_AGENT_ID,
+            description: "User-facing support desk for backlog visibility",
+            create: createCodefleetFrontDeskAgent(backlogService, frontDeskRuntimeConfig),
+          },
+          {
+            agentId: REQUIREMENTS_INTERVIEW_AGENT_ID,
+            description: "Interview-focused agent for clarifying requirements",
+            create: createCodefleetRequirementsInterviewerAgent(backlogService, frontDeskRuntimeConfig),
+          },
+          {
+            agentId: RELEASE_PLAN_AGENT_ID,
+            description: "Release-plan authoring agent",
+            create: createCodefleetReleasePlanAgent(backlogService, frontDeskRuntimeConfig),
+          },
+        ],
       },
     ],
   });
-  const frontDeskMount = mounts.get(FRONT_DESK_AGENT_NAME);
-  if (frontDeskMount) {
+  const codefleetMount = mounts.get(MCP_MOUNT_NAME);
+  if (codefleetMount) {
     // Register custom domain tools on the mounted MCP server so they are available
     // through both JSON-RPC calls and /tools/call HTTP bridge routes.
-    registerBacklogMcpTools(frontDeskMount, backlogService, {
-      agentName: FRONT_DESK_AGENT_NAME,
+    registerBacklogMcpTools(codefleetMount, backlogService, {
+      agentName: MCP_MOUNT_NAME,
       logger: toolAuditLogger,
     });
-    registerFleetObservabilityTools(frontDeskMount, backlogService, observabilityService, {
-      agentName: FRONT_DESK_AGENT_NAME,
+    registerFleetObservabilityTools(codefleetMount, backlogService, observabilityService, {
+      agentName: MCP_MOUNT_NAME,
     });
   }
 
