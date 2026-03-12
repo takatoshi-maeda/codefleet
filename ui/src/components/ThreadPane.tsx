@@ -905,7 +905,6 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
     messages.find((m) => m.role === 'user')?.content?.split('\n')[0] ??
     sessions.find((item) => item.sessionId === selectedSessionId)?.latestUserMessage?.trim() ??
     title;
-
   const handleCopyAll = useCallback(async () => {
     const allText = messages
       .filter((m) => m.role !== 'system')
@@ -1052,9 +1051,13 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
   return (
     <View style={[styles.container, { backgroundColor: colors.surface }]}>
       <View style={[styles.header, { borderBottomColor: colors.surfaceBorder }]}>
-        <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
-          {titleText}
-        </Text>
+        {titleText.trim().length > 0 ? (
+          <Text style={[styles.title, { color: colors.text }]} numberOfLines={1}>
+            {titleText}
+          </Text>
+        ) : (
+          <View style={styles.headerSpacer} />
+        )}
         <View style={styles.headerActions}>
           <Pressable onPress={handleCopyAll} hitSlop={8}>
             <Ionicons name="copy-outline" size={20} color={colors.mutedText} />
@@ -1126,7 +1129,7 @@ export function ThreadPane({ client, title = 'Feedback Desk' }: Props) {
         ) : messages.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: colors.mutedText }]}>
-              Start a conversation with {title}.
+              {title.trim().length > 0 ? `Start a conversation with ${title}.` : 'Start a conversation.'}
             </Text>
           </View>
         ) : (
@@ -1171,6 +1174,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
     marginRight: 12,
+  },
+  headerSpacer: {
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',

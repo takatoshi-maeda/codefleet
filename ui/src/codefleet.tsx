@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Board } from './components/Board';
+import { RequirementsInterviewWorkspace } from './components/RequirementsInterviewWorkspace';
 import { DocumentWorkspace } from './components/document/DocumentWorkspace';
 import { ThreadPane } from './components/ThreadPane';
 import { useCodefleetBoard } from './hooks/useCodefleetBoard';
@@ -12,7 +13,7 @@ import { useOptionalStandaloneThemePreference } from './theme/StandaloneThemePre
 import { useCodefleetColors } from './theme/useCodefleetColors';
 
 const WIDE_BREAKPOINT = 768;
-const SCREEN_TABS = ['agent', 'document', 'board'] as const;
+const SCREEN_TABS = ['requirementsInterview', 'document', 'board'] as const;
 
 type ScreenTab = (typeof SCREEN_TABS)[number];
 
@@ -59,7 +60,7 @@ export default function CodefleetScreen({
   const [fleetPeers, setFleetPeers] = useState<FleetPeerNode[]>([]);
   const [isPeerMenuOpen, setIsPeerMenuOpen] = useState(false);
   const [fleetEndpoint, setFleetEndpoint] = useState(() => normalizeEndpoint(endpointStore.get()));
-  const [activeTab, setActiveTab] = useState<ScreenTab>('agent');
+  const [activeTab, setActiveTab] = useState<ScreenTab>('requirementsInterview');
   const sessionSlide = useRef(new Animated.Value(isSessionOpen ? 0 : 1)).current;
   const previousSessionOpen = useRef(isSessionOpen);
 
@@ -174,7 +175,7 @@ export default function CodefleetScreen({
   );
 
   const canSwitchPeer = fleetPeers.length > 0;
-  const isAgentTabActive = activeTab === 'agent';
+  const isRequirementsInterviewTabActive = activeTab === 'requirementsInterview';
   const isBoardTabActive = activeTab === 'board';
   const navigation = chrome?.renderNavigation?.({
     orientation: isWide ? 'vertical' : 'horizontal',
@@ -241,7 +242,11 @@ export default function CodefleetScreen({
                   { color: isActive ? colors.tint : colors.mutedText },
                 ]}
               >
-                {tab === 'agent' ? 'Agent' : tab === 'document' ? 'Document' : 'Board'}
+                {tab === 'requirementsInterview'
+                  ? 'Requirements Interview'
+                  : tab === 'document'
+                    ? 'Document'
+                    : 'Board'}
               </Text>
             </Pressable>
           );
@@ -321,8 +326,8 @@ export default function CodefleetScreen({
             </View>
             <View style={styles.contentRow}>
               <View style={styles.boardContainer}>
-                {isAgentTabActive ? (
-                  renderSessionPane()
+                {isRequirementsInterviewTabActive ? (
+                  <RequirementsInterviewWorkspace client={client} />
                 ) : isBoardTabActive ? (
                   <Board
                     client={client}
@@ -404,8 +409,8 @@ export default function CodefleetScreen({
             </View>
           </View>
           {navigation}
-          {isAgentTabActive ? (
-            renderSessionPane()
+          {isRequirementsInterviewTabActive ? (
+            <RequirementsInterviewWorkspace client={client} />
           ) : isBoardTabActive ? (
             <Board
               client={client}
